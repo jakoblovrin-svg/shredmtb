@@ -394,6 +394,11 @@
             <div class="rp-item"><div class="rp-val" id="rp-dist">0.00</div><div class="rp-lbl">km</div></div>
             <div class="rp-item"><div class="rp-val" id="rp-elev">0</div><div class="rp-lbl">m elev</div></div>
           </div>
+          <!-- Path preview map — shown when GPS path was recorded -->
+          <div id="save-map-wrap" style="display:none;margin-bottom:18px;border-radius:10px;overflow:hidden;height:180px;border:1px solid var(--border)">
+            <div id="save-map" style="width:100%;height:100%"></div>
+          </div>
+
           <div class="form-grp">
             <label class="form-lbl">Trail Name</label>
             <input type="text" class="form-inp" id="inp-trail" placeholder="e.g. Eagle Rock Flow Trail" maxlength="60">
@@ -588,6 +593,8 @@ let gpsPath = [], lastGPSPos = null, lastGPSDist = 0;
 let gpsElevGain = 0, lastAlt = null;
 let altBuffer = [];  // smooth noisy altitude readings
 let gpsHasAlt = false, gpsHasSpd = false;
+let lastGPSTime = null;   // for calculating speed from position delta
+let savedPath = [];       // preserved after stopGPS so save form can show map
 
 function startGPS() {
   if (!navigator.geolocation) { setGPS('sim', 'SIM'); return; }
@@ -598,8 +605,10 @@ function startGPS() {
 
 function stopGPS() {
   if (gpsWatchId != null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
+  savedPath = [...gpsPath]; // preserve before clearing so save form can display map
   gpsActive = false; gpsPath = []; lastGPSPos = null; lastGPSDist = 0;
   gpsElevGain = 0; lastAlt = null; altBuffer = []; gpsHasAlt = false; gpsHasSpd = false;
+  lastGPSTime = null;
   setGPS('off', 'GPS');
 }
 
@@ -614,20 +623,34 @@ function onGPSPos(pos) {
     if (rideMap) rideMap.setView([lat, lng], 16);
   }
 
-  // ── Real distance from GPS coordinates ──
-  if (lastGPSPos) {
-    const d = haversine(lastGPSPos[0], lastGPSPos[1], lat, lng);
-    if (d < 0.5) { lastGPSDist += d; rideData.dist = lastGPSDist; }
-  }
-  lastGPSPos = [lat, lng];
+  // ── Real distance + speed from GPS coordinates ──
+  const now = Date.now();
+  if (lastGPSPos && lastGPSTime) {
+    const d  = haversine(lastGPSPos[0], lastGPSPos[1], lat, lng);
+    const dt = (now - lastGPSTime) / 1000; // seconds between fixes
 
-  // ── Real speed from GPS ──
-  if (speed != null && speed >= 0) {
-    gpsHasSpd = true;
-    const kph = speed * 3.6;
-    rideData.spd = kph;
-    rideData.maxSpd = Math.max(rideData.maxSpd, kph);
+    if (d < 0.5) {                          // sanity: ignore GPS jumps
+      lastGPSDist += d;
+      rideData.dist = lastGPSDist;
+    }
+
+    // Calculate speed from position delta — reliable on all phones including iOS
+    if (dt > 0 && dt < 15 && d < 0.3) {
+      const calcKph = (d / dt) * 3600;
+      if (calcKph < 120) {                  // ignore impossible readings
+        // Prefer native coords.speed if available and plausible, else use calculated
+        const nativeKph = (speed != null && speed >= 0) ? speed * 3.6 : null;
+        const kph = (nativeKph != null && Math.abs(nativeKph - calcKph) < 30)
+                    ? (nativeKph * 0.4 + calcKph * 0.6)  // blend both sources
+                    : calcKph;
+        gpsHasSpd = true;
+        rideData.spd    = kph;
+        rideData.maxSpd = Math.max(rideData.maxSpd, kph);
+      }
+    }
   }
+  lastGPSPos  = [lat, lng];
+  lastGPSTime = now;
 
   // ── Real elevation from GPS altitude ──
   // Phone altitude is noisy — we smooth it with a rolling average
@@ -805,15 +828,46 @@ function startRide() {
   simTick   = setInterval(simStep, 1000);
 }
 
+let saveMap = null;
+
 function stopRide() {
-  clearInterval(timerTick); clearInterval(simTick); stopGPS();
+  clearInterval(timerTick); clearInterval(simTick);
+  stopGPS(); // savedPath is set inside stopGPS before clearing gpsPath
   populateSaveForm(false);
   showState('save');
+  // Show the recorded path on the save form
+  setTimeout(() => initSaveMap(), 80);
+}
+
+function initSaveMap() {
+  const wrap = $('save-map-wrap');
+  if (!savedPath || savedPath.length < 2) { if (wrap) wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+
+  if (saveMap) {
+    // Reuse existing map instance, just update the path
+    saveMap.eachLayer(l => { if (l instanceof L.Polyline || l instanceof L.Marker) saveMap.removeLayer(l); });
+    const poly = L.polyline(savedPath, { color: '#ff6200', weight: 4 }).addTo(saveMap);
+    const mkIco = c => L.divIcon({ html: `<div style="width:10px;height:10px;background:${c};border:2px solid #fff;border-radius:50%"></div>`, iconSize:[10,10], iconAnchor:[5,5], className:'' });
+    L.marker(savedPath[0], { icon: mkIco('#3dcc6e') }).addTo(saveMap);
+    L.marker(savedPath[savedPath.length-1], { icon: mkIco('#ff6200') }).addTo(saveMap);
+    saveMap.fitBounds(poly.getBounds(), { padding: [16, 16] });
+    saveMap.invalidateSize();
+    return;
+  }
+
+  saveMap = L.map('save-map', { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(saveMap);
+  const poly = L.polyline(savedPath, { color: '#ff6200', weight: 4 }).addTo(saveMap);
+  const mkIco = c => L.divIcon({ html: `<div style="width:10px;height:10px;background:${c};border:2px solid #fff;border-radius:50%"></div>`, iconSize:[10,10], iconAnchor:[5,5], className:'' });
+  L.marker(savedPath[0], { icon: mkIco('#3dcc6e') }).addTo(saveMap);
+  L.marker(savedPath[savedPath.length-1], { icon: mkIco('#ff6200') }).addTo(saveMap);
+  saveMap.fitBounds(poly.getBounds(), { padding: [16, 16] });
 }
 
 function discardRide() {
   clearInterval(timerTick); clearInterval(simTick); stopGPS();
-  timerSec = 0; rideData = null; chosenDiff = null; pendingImport = null;
+  timerSec = 0; rideData = null; chosenDiff = null; pendingImport = null; savedPath = [];
   $('disp-idle').textContent = '00:00:00';
   showState('idle');
 }
@@ -861,7 +915,7 @@ function saveRide() {
     maxSpd:  +(isImport ? src.maxSpd : rideData.maxSpd).toFixed(1),
     avgSpd:  isImport ? src.avgSpd || avgSpd : avgSpd,
     notes:   $('inp-notes').value.trim(),
-    path:    isImport ? (pendingImport.path || []) : (gpsPath.length > 1 ? simplifyPath(gpsPath, 300) : []),
+    path:    isImport ? (pendingImport.path || []) : (savedPath.length > 1 ? simplifyPath(savedPath, 300) : []),
     avgHr:   isImport ? pendingImport.avgHr : null,
     maxHr:   isImport ? pendingImport.maxHr : null,
     source:  isImport ? 'garmin' : 'app'
