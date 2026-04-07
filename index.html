@@ -284,6 +284,41 @@
     .toast { position:fixed; bottom:82px; left:50%; transform:translateX(-50%) translateY(14px); background:var(--success); color:#fff; font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:14px; letter-spacing:1px; padding:10px 20px; border-radius:8px; opacity:0; pointer-events:none; white-space:nowrap; z-index:300; transition:opacity .3s,transform .3s; }
     .toast.on { opacity:1; transform:translateX(-50%) translateY(0); }
 
+    /* Media upload */
+    .media-upload { margin-bottom:16px; }
+    .media-grid { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+    .media-thumb { position:relative; width:72px; height:72px; border-radius:8px; overflow:hidden; border:1px solid var(--border); }
+    .media-thumb img, .media-thumb video { width:100%; height:100%; object-fit:cover; }
+    .media-thumb .media-rm { position:absolute; top:2px; right:2px; width:20px; height:20px; border-radius:50%; background:rgba(0,0,0,.7); color:#fff; border:none; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+    .media-thumb .media-play { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:20px; background:rgba(0,0,0,.3); pointer-events:none; }
+    .media-add-btn { width:72px; height:72px; border-radius:8px; border:2px dashed var(--border); background:transparent; color:var(--dim); font-size:22px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:border-color .2s; }
+    .media-add-btn:hover { border-color:var(--orange); color:var(--orange); }
+
+    /* Media in history detail */
+    .ride-media { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+    .ride-media-item { width:80px; height:80px; border-radius:8px; overflow:hidden; border:1px solid var(--border); cursor:pointer; position:relative; }
+    .ride-media-item img, .ride-media-item video { width:100%; height:100%; object-fit:cover; }
+    .ride-media-item .media-play { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:22px; background:rgba(0,0,0,.3); pointer-events:none; }
+
+    /* Fullscreen media viewer */
+    .media-viewer { position:fixed; inset:0; background:rgba(0,0,0,.92); z-index:600; display:flex; align-items:center; justify-content:center; }
+    .media-viewer img, .media-viewer video { max-width:95vw; max-height:85vh; border-radius:8px; }
+    .media-viewer-close { position:absolute; top:16px; right:16px; background:rgba(255,255,255,.15); border:none; color:#fff; width:40px; height:40px; border-radius:50%; font-size:20px; cursor:pointer; }
+
+    /* Grid customization */
+    .grid-config-bar { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; border-bottom:1px solid var(--border); }
+    .grid-config-btn { background:none; border:1px solid var(--border); border-radius:6px; padding:5px 10px; color:var(--dim); font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:10px; letter-spacing:1.5px; text-transform:uppercase; cursor:pointer; transition:all .15s; }
+    .grid-config-btn:hover { border-color:var(--orange); color:var(--orange); }
+    .grid-config-panel { display:none; padding:14px; border-bottom:1px solid var(--border); background:var(--bg-surf); }
+    .grid-config-panel.open { display:block; }
+    .grid-opt { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); }
+    .grid-opt:last-child { border-bottom:none; }
+    .grid-opt-name { flex:1; font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:13px; letter-spacing:1px; text-transform:uppercase; }
+    .grid-toggle { width:40px; height:22px; border-radius:11px; background:var(--muted); border:none; cursor:pointer; position:relative; transition:background .2s; flex-shrink:0; }
+    .grid-toggle.on { background:var(--orange); }
+    .grid-toggle::after { content:''; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; transition:transform .2s; }
+    .grid-toggle.on::after { transform:translateX(18px); }
+
     /* Leaflet overrides */
     .leaflet-control-attribution { display:none !important; }
     .leaflet-control-zoom a { background:#1a1a1a !important; color:#ccc !important; border-color:#333 !important; }
@@ -334,6 +369,12 @@
           <div id="ride-map" class="map-el"></div>
           <div class="map-overlay" id="map-overlay"><span>📡</span>Locating GPS…</div>
         </div>
+
+        <div class="grid-config-bar">
+          <span style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--dim)">Live Stats</span>
+          <button class="grid-config-btn" onclick="toggleGridConfig()">⚙ Customize</button>
+        </div>
+        <div class="grid-config-panel" id="grid-config-panel"></div>
 
         <div class="live-grid">
           <div class="live-cell">
@@ -429,6 +470,13 @@
           <div class="form-grp">
             <label class="form-lbl">Notes</label>
             <textarea class="form-inp" id="inp-notes" placeholder="Trail conditions, highlights…"></textarea>
+          </div>
+          <div class="form-grp media-upload">
+            <label class="form-lbl">Photos &amp; Videos</label>
+            <div class="media-grid" id="media-grid">
+              <button class="media-add-btn" onclick="$('media-inp').click()">+</button>
+            </div>
+            <input type="file" id="media-inp" accept="image/*,video/*" multiple capture="environment" style="display:none" onchange="handleMediaFiles(event)">
           </div>
           <button class="btn btn-primary" onclick="saveRide()" style="margin-bottom:9px">✓ SAVE RIDE</button>
           <button class="btn btn-danger" onclick="discardRide()">✕ DISCARD</button>
@@ -595,6 +643,7 @@ let timerSec   = 0, timerTick = null, uiTick = null;
 let rideData   = null, chosenDiff = null;
 let pendingImport = null;
 let isPaused   = false;
+let pendingMedia = []; // base64 data URLs for photos/videos attached during save
 
 // ═══════════════════════════════════════════════════════
 //  GPS
@@ -846,6 +895,7 @@ function startRide() {
   const rlbl = $('ride-label'); if (rlbl) rlbl.textContent = 'Riding';
 
   showState('run');
+  buildLiveGrid();
   setTimeout(() => {
     initRideMap();
     resetRideMap();
@@ -903,6 +953,7 @@ function initSaveMap() {
 function discardRide() {
   clearInterval(timerTick); clearInterval(uiTick); stopGPS(); stopAccel();
   timerSec = 0; isPaused = false; rideData = null; chosenDiff = null; pendingImport = null; savedPath = [];
+  pendingMedia = [];
   $('disp-idle').textContent = '00:00:00';
   showState('idle');
 }
@@ -918,6 +969,8 @@ function populateSaveForm(isImport) {
   $('garmin-tag').style.display = isImport ? '' : 'none';
   chosenDiff = null;
   document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('sel'));
+  pendingMedia = [];
+  renderMediaGrid();
 }
 
 function pickDiff(btn) {
@@ -953,12 +1006,14 @@ function saveRide() {
     path:    isImport ? (pendingImport.path || []) : (savedPath.length > 1 ? simplifyPath(savedPath, 300) : []),
     avgHr:   isImport ? pendingImport.avgHr : null,
     maxHr:   isImport ? pendingImport.maxHr : null,
-    source:  isImport ? 'garmin' : 'app'
+    source:  isImport ? 'garmin' : 'app',
+    media: pendingMedia.length ? [...pendingMedia] : []
   };
 
   rides.unshift(ride);
   persist();
   pendingImport = null; timerSec = 0; rideData = null; chosenDiff = null; gpsPath = [];
+  pendingMedia = [];
   showState('idle');
   toastMsg('✓ Ride saved!');
   switchView('history');
@@ -998,6 +1053,22 @@ function uiStep() {
   if (distSrc) distSrc.textContent = gpsActive ? '📡' : '';
   const elevSrc = $('elev-src');
   if (elevSrc) elevSrc.textContent = gpsHasAlt ? '📡' : '';
+
+  // Duration cell (optional)
+  const durEl = $('l-dur2');
+  if (durEl) durEl.textContent = fmtShort(timerSec);
+
+  // Pace cell (optional) — min/km
+  const paceEl = $('l-pace');
+  if (paceEl) {
+    if (rideData.dist > 0.01 && timerSec > 5) {
+      const pMin = (timerSec / 60) / rideData.dist;
+      const pm = Math.floor(pMin), ps = Math.round((pMin - pm) * 60);
+      paceEl.textContent = `${pm}:${String(ps).padStart(2,'0')}`;
+    } else {
+      paceEl.textContent = '—';
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1044,6 +1115,119 @@ function togglePause() {
     dispR.classList.remove('paused');
     rlbl.textContent = 'Riding';
   }
+}
+
+// ═══════════════════════════════════════════════════════
+//  MEDIA ATTACHMENTS
+// ═══════════════════════════════════════════════════════
+function handleMediaFiles(e) {
+  const files = [...e.target.files];
+  e.target.value = '';
+  for (const file of files) {
+    if (pendingMedia.length >= 6) { toastMsg('Max 6 files', false); break; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      pendingMedia.push({ data: reader.result, type: file.type.startsWith('video') ? 'video' : 'image' });
+      renderMediaGrid();
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
+function renderMediaGrid() {
+  const grid = $('media-grid');
+  grid.innerHTML = pendingMedia.map((m, i) =>
+    `<div class="media-thumb">
+      ${m.type === 'video'
+        ? `<video src="${m.data}" muted></video><div class="media-play">▶</div>`
+        : `<img src="${m.data}">`}
+      <button class="media-rm" onclick="removeMedia(${i})">✕</button>
+    </div>`
+  ).join('') + (pendingMedia.length < 6 ? `<button class="media-add-btn" onclick="$('media-inp').click()">+</button>` : '');
+}
+
+function removeMedia(i) {
+  pendingMedia.splice(i, 1);
+  renderMediaGrid();
+}
+
+function openMediaViewer(dataUrl, type) {
+  const viewer = document.createElement('div');
+  viewer.className = 'media-viewer';
+  viewer.onclick = () => viewer.remove();
+  viewer.innerHTML = `<button class="media-viewer-close" onclick="this.parentElement.remove()">✕</button>` +
+    (type === 'video'
+      ? `<video src="${dataUrl}" controls autoplay style="max-width:95vw;max-height:85vh;border-radius:8px"></video>`
+      : `<img src="${dataUrl}">`);
+  document.body.appendChild(viewer);
+}
+
+// ═══════════════════════════════════════════════════════
+//  CUSTOMIZABLE LIVE GRID
+// ═══════════════════════════════════════════════════════
+const GRID_CELLS = [
+  { key: 'dist',    label: 'Distance',  id: 'l-dist', unit: 'km',   hi: false },
+  { key: 'elev',    label: 'Elev Gain', id: 'l-elev', unit: 'm',    hi: false },
+  { key: 'spd',     label: 'Speed',     id: 'l-spd',  unit: 'km/h', hi: true  },
+  { key: 'maxSpd',  label: 'Max Speed', id: 'l-max',  unit: 'km/h', hi: false },
+  { key: 'alt',     label: 'Altitude',  id: 'l-alt',  unit: 'm asl',hi: false },
+  { key: 'avgSpd',  label: 'Avg Speed', id: 'l-avg',  unit: 'km/h', hi: false },
+  { key: 'timer',   label: 'Duration',  id: 'l-dur2', unit: '',     hi: false },
+  { key: 'pace',    label: 'Pace',      id: 'l-pace', unit: 'min/km', hi: false },
+];
+
+let gridConfig = JSON.parse(localStorage.getItem('mtb_grid') || 'null') ||
+  ['dist','elev','spd','maxSpd','alt','avgSpd'];
+
+function persistGrid() { localStorage.setItem('mtb_grid', JSON.stringify(gridConfig)); }
+
+function buildLiveGrid() {
+  const container = document.querySelector('.live-grid');
+  container.innerHTML = '';
+  for (const key of gridConfig) {
+    const cell = GRID_CELLS.find(c => c.key === key);
+    if (!cell) continue;
+    const srcTag = key === 'dist' ? ' <span class="src-tag" id="dist-src"></span>'
+                 : key === 'elev' ? ' <span class="src-tag" id="elev-src"></span>'
+                 : '';
+    container.innerHTML += `<div class="live-cell${cell.hi ? ' hi' : ''}">
+      <div class="live-cell-lbl">${cell.label}${srcTag}</div>
+      <div class="live-cell-val" id="${cell.id}"${cell.key === 'avgSpd' ? ' style="font-size:28px"' : ''}>—</div>
+      <div class="live-cell-unit">${cell.unit}</div>
+    </div>`;
+  }
+}
+
+function toggleGridConfig() {
+  const panel = $('grid-config-panel');
+  panel.classList.toggle('open');
+  if (panel.classList.contains('open')) renderGridConfig();
+}
+
+function renderGridConfig() {
+  const panel = $('grid-config-panel');
+  panel.innerHTML = GRID_CELLS.map(cell => {
+    const on = gridConfig.includes(cell.key);
+    return `<div class="grid-opt">
+      <span class="grid-opt-name">${cell.label}</span>
+      <button class="grid-toggle${on ? ' on' : ''}" onclick="toggleGridCell('${cell.key}', this)"></button>
+    </div>`;
+  }).join('') + `<div style="margin-top:10px;font-family:'Barlow Condensed',sans-serif;font-size:10px;color:var(--dim);letter-spacing:1px;text-transform:uppercase">Tap toggles to show/hide cells</div>`;
+}
+
+function toggleGridCell(key, btn) {
+  const idx = gridConfig.indexOf(key);
+  if (idx > -1) {
+    if (gridConfig.length <= 2) { toastMsg('Keep at least 2', false); return; }
+    gridConfig.splice(idx, 1);
+    btn.classList.remove('on');
+  } else {
+    if (gridConfig.length >= 8) { toastMsg('Max 8 cells', false); return; }
+    gridConfig.push(key);
+    btn.classList.add('on');
+  }
+  persistGrid();
+  buildLiveGrid();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1284,6 +1468,13 @@ function renderHistory() {
           })()}
         </div>
         ${r.notes ? `<div class="ride-notes-txt">"${esc(r.notes)}"</div>` : ''}
+        ${r.media && r.media.length ? `<div class="ride-media">${r.media.map((m,i) =>
+          `<div class="ride-media-item" onclick="openMediaViewer(rides.find(x=>x.id===${r.id}).media[${i}].data, '${m.type}')">
+            ${m.type === 'video'
+              ? `<video src="${m.data}" muted></video><div class="media-play">▶</div>`
+              : `<img src="${m.data}">`}
+          </div>`
+        ).join('')}</div>` : ''}
         ${r.path && r.path.length > 1 ? `<div class="card-map-wrap"><div class="card-map-el" id="cmap-${r.id}"></div></div>` : ''}
         <div class="card-actions">
           <button class="share-btn" onclick="showShare(${r.id},event)">📤 Share</button>
@@ -1497,6 +1688,7 @@ function dismissIOSPrompt() {
 // ═══════════════════════════════════════════════════════
 showState('idle');
 setGPS('off', 'GPS');
+buildLiveGrid();
 checkInstallPrompt();
 </script>
 </body>
