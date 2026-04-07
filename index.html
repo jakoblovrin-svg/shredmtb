@@ -88,6 +88,7 @@
     .live-cell-val { font-family:'Barlow Condensed',sans-serif; font-weight:900; font-size:34px; line-height:1; color:var(--text); }
     .live-cell.hi .live-cell-val { color:var(--orange); }
     .live-cell-unit { font-family:'Barlow Condensed',sans-serif; font-weight:600; font-size:11px; color:var(--dim); margin-top:1px; }
+    .src-tag { font-size:9px; font-weight:700; color:var(--green); letter-spacing:1px; vertical-align:middle; }
 
     /* Speed bar */
     .speed-meter { padding:16px 20px; border-bottom:1px solid var(--border); }
@@ -334,12 +335,12 @@
 
         <div class="live-grid">
           <div class="live-cell">
-            <div class="live-cell-lbl">Distance</div>
+            <div class="live-cell-lbl">Distance <span class="src-tag" id="dist-src"></span></div>
             <div class="live-cell-val" id="l-dist">0.00</div>
             <div class="live-cell-unit">km</div>
           </div>
           <div class="live-cell">
-            <div class="live-cell-lbl">Elevation Gain</div>
+            <div class="live-cell-lbl">Elev Gain <span class="src-tag" id="elev-src"></span></div>
             <div class="live-cell-val" id="l-elev">0</div>
             <div class="live-cell-unit">m</div>
           </div>
@@ -352,6 +353,16 @@
             <div class="live-cell-lbl">Max Speed</div>
             <div class="live-cell-val" id="l-max">0.0</div>
             <div class="live-cell-unit">km/h</div>
+          </div>
+          <div class="live-cell">
+            <div class="live-cell-lbl">Altitude</div>
+            <div class="live-cell-val" id="l-alt">—</div>
+            <div class="live-cell-unit">m asl</div>
+          </div>
+          <div class="live-cell">
+            <div class="live-cell-lbl">Duration</div>
+            <div class="live-cell-val" id="l-dur" style="font-size:28px">0:00</div>
+            <div class="live-cell-unit">riding</div>
           </div>
         </div>
 
@@ -574,6 +585,9 @@ let terrain = 'flat', terrainTmr = 0, terrainDur = 12, curSpd = 6, tgtSpd = 18;
 // ═══════════════════════════════════════════════════════
 let gpsWatchId = null, gpsActive = false;
 let gpsPath = [], lastGPSPos = null, lastGPSDist = 0;
+let gpsElevGain = 0, lastAlt = null;
+let altBuffer = [];  // smooth noisy altitude readings
+let gpsHasAlt = false, gpsHasSpd = false;
 
 function startGPS() {
   if (!navigator.geolocation) { setGPS('sim', 'SIM'); return; }
@@ -585,11 +599,13 @@ function startGPS() {
 function stopGPS() {
   if (gpsWatchId != null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
   gpsActive = false; gpsPath = []; lastGPSPos = null; lastGPSDist = 0;
+  gpsElevGain = 0; lastAlt = null; altBuffer = []; gpsHasAlt = false; gpsHasSpd = false;
   setGPS('off', 'GPS');
 }
 
 function onGPSPos(pos) {
-  const { latitude: lat, longitude: lng, speed } = pos.coords;
+  const { latitude: lat, longitude: lng, speed, altitude, altitudeAccuracy } = pos.coords;
+
   if (!gpsActive) {
     gpsActive = true;
     setGPS('active', 'GPS ✓');
@@ -597,16 +613,45 @@ function onGPSPos(pos) {
     if (ov) ov.style.display = 'none';
     if (rideMap) rideMap.setView([lat, lng], 16);
   }
+
+  // ── Real distance from GPS coordinates ──
   if (lastGPSPos) {
     const d = haversine(lastGPSPos[0], lastGPSPos[1], lat, lng);
     if (d < 0.5) { lastGPSDist += d; rideData.dist = lastGPSDist; }
   }
   lastGPSPos = [lat, lng];
+
+  // ── Real speed from GPS ──
   if (speed != null && speed >= 0) {
+    gpsHasSpd = true;
     const kph = speed * 3.6;
     rideData.spd = kph;
     rideData.maxSpd = Math.max(rideData.maxSpd, kph);
   }
+
+  // ── Real elevation from GPS altitude ──
+  // Phone altitude is noisy — we smooth it with a rolling average
+  if (altitude != null && altitudeAccuracy != null && altitudeAccuracy < 50) {
+    gpsHasAlt = true;
+    altBuffer.push(altitude);
+    // Keep a window of 5 readings for smoothing
+    if (altBuffer.length > 5) altBuffer.shift();
+    const smoothAlt = altBuffer.reduce((a, b) => a + b, 0) / altBuffer.length;
+
+    if (lastAlt !== null) {
+      const diff = smoothAlt - lastAlt;
+      // Only count gains > 1m to filter noise, ignore impossible jumps > 30m
+      if (diff > 1 && diff < 30) {
+        gpsElevGain += diff;
+        rideData.elev = gpsElevGain;
+      }
+    }
+    lastAlt = smoothAlt;
+
+    // Store current altitude for display
+    rideData.altitude = Math.round(smoothAlt);
+  }
+
   gpsPath.push([lat, lng]);
   updateRideMap(lat, lng);
 }
@@ -751,7 +796,12 @@ function startRide() {
   }, 50);
 
   startGPS();
-  timerTick = setInterval(() => { timerSec++; $('disp-run').textContent = fmtTime(timerSec); }, 1000);
+  timerTick = setInterval(() => {
+    timerSec++;
+    $('disp-run').textContent = fmtTime(timerSec);
+    const durEl = $('l-dur');
+    if (durEl) durEl.textContent = fmtShort(timerSec);
+  }, 1000);
   simTick   = setInterval(simStep, 1000);
 }
 
@@ -844,22 +894,43 @@ function simStep() {
   curSpd += (tgtSpd - curSpd) * .18 + (Math.random() - .5) * 1.8;
   curSpd = Math.max(.5, Math.min(58, curSpd));
 
-  if (!gpsActive || !rideData.spd) {
-    rideData.dist += curSpd / 3600;
-    rideData.spd   = curSpd;
+  // ── Speed: only use simulation when GPS speed is not available ──
+  if (!gpsHasSpd) {
+    rideData.spd    = curSpd;
     rideData.maxSpd = Math.max(rideData.maxSpd, curSpd);
   }
-  if (terrain === 'climb') rideData.elev += (rideData.spd / 3600) * 1000 * .13;
 
+  // ── Distance: only accumulate from sim when GPS is not tracking ──
+  if (!gpsActive) {
+    rideData.dist += curSpd / 3600;
+  }
+
+  // ── Elevation: only simulate when GPS altitude not available ──
+  if (!gpsHasAlt) {
+    if (terrain === 'climb') rideData.elev += (rideData.spd / 3600) * 1000 * .13;
+  }
+
+  // ── Update DOM ──
   const spd = rideData.spd || curSpd;
   $('l-dist').textContent = rideData.dist.toFixed(2);
   $('l-elev').textContent = Math.round(rideData.elev);
   $('l-spd') .textContent = spd.toFixed(1);
   $('l-max') .textContent = rideData.maxSpd.toFixed(1);
+
+  // Altitude readout (only when GPS altitude available)
+  const altEl = $('l-alt');
+  if (altEl) altEl.textContent = rideData.altitude != null ? rideData.altitude : '—';
+
   const pct = Math.min(100, (spd / 58) * 100);
   $('spd-fill').style.width = pct + '%';
   $('spd-pct') .textContent = Math.round(pct) + '%';
-  $('spd-src') .textContent = gpsActive ? 'GPS Speed' : 'Simulated';
+
+  // Show data source labels
+  $('spd-src').textContent = gpsHasSpd ? '📡 GPS Speed' : '🎮 Simulated';
+  const elevSrc = $('elev-src');
+  if (elevSrc) elevSrc.textContent = gpsHasAlt ? '📡 GPS' : '🎮 SIM';
+  const distSrc = $('dist-src');
+  if (distSrc) distSrc.textContent = gpsActive ? '📡 GPS' : '🎮 SIM';
 
   const pill = $('terrain-pill');
   pill.className = 'terrain-pill ' + terrain;
