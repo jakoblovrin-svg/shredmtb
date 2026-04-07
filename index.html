@@ -985,11 +985,8 @@ function simStep() {
   curSpd += (tgtSpd - curSpd) * .18 + (Math.random() - .5) * 1.8;
   curSpd = Math.max(.5, Math.min(58, curSpd));
 
-  // ── Speed: only use simulation when GPS speed is not available ──
-  if (!gpsHasSpd) {
-    rideData.spd    = curSpd;
-    rideData.maxSpd = Math.max(rideData.maxSpd, curSpd);
-  }
+  // ── Speed: ONLY from real GPS or accelerometer (no simulation) ──
+  // If no GPS speed data yet, speed stays at 0 until real movement detected
 
   // ── Distance: only accumulate from sim when GPS is not tracking ──
   if (!gpsActive) {
@@ -1107,12 +1104,12 @@ function onMotion(e) {
   accelMag = Math.sqrt((a.x || 0) ** 2 + (a.y || 0) ** 2 + (a.z || 0) ** 2);
 
   // If barely moving (< 0.3 m/s²), count consecutive low readings
-  // After ~2 seconds of near-zero accel, force speed to 0 (more aggressive than before)
+  // After ~2 seconds of near-zero accel, force speed to 0
   if (accelMag < 0.3) {
     accelLow++;
     if (accelLow >= 2 && rideData && !isPaused) {
       rideData.spd = 0;
-      gpsHasSpd = true; // suppress simulation
+      // DON'T set gpsHasSpd=true — let simulation still run for testing on table
       speedBuffer = []; // reset smoothing buffer
     }
   } else {
