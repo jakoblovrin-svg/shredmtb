@@ -606,6 +606,7 @@ let gpsWatchId = null, gpsActive = false;
 let gpsPath = [], lastGPSPos = null, lastGPSDist = 0;
 let gpsElevGain = 0, lastAlt = null;
 let altBuffer = [];  // smooth noisy altitude readings
+let speedBuffer = [];  // smooth speed readings (average last 2 to reduce noise)
 let gpsHasAlt = false, gpsHasSpd = false;
 let lastGPSTime = null;   // for calculating speed from position delta
 let savedPath = [];       // preserved after stopGPS so save form can show map
@@ -621,7 +622,8 @@ function stopGPS() {
   if (gpsWatchId != null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
   savedPath = [...gpsPath]; // preserve before clearing so save form can display map
   gpsActive = false; gpsPath = []; lastGPSPos = null; lastGPSDist = 0;
-  gpsElevGain = 0; lastAlt = null; altBuffer = []; gpsHasAlt = false; gpsHasSpd = false;
+  gpsElevGain = 0; lastAlt = null; altBuffer = []; speedBuffer = [];
+  gpsHasAlt = false; gpsHasSpd = false;
   lastGPSTime = null;
   setGPS('off', 'GPS');
 }
@@ -656,7 +658,8 @@ function onGPSPos(pos) {
     }
 
     // Calculate speed from position delta — reliable on all phones including iOS
-    if (dt > 0 && dt < 15 && d < 0.3) {
+    // Require minimum 12m movement to filter GPS noise (typical GPS jitter is 5-10m)
+    if (dt > 0 && dt < 15 && d < 0.3 && d > 0.012) {
       const calcKph = (d / dt) * 3600;
       if (calcKph < 120) {                  // ignore impossible readings
         // Prefer native coords.speed if available and plausible, else use calculated
@@ -664,10 +667,19 @@ function onGPSPos(pos) {
         const kph = (nativeKph != null && Math.abs(nativeKph - calcKph) < 30)
                     ? (nativeKph * 0.4 + calcKph * 0.6)  // blend both sources
                     : calcKph;
+
+        // Smooth speed over 2 readings to reduce noise spikes
+        speedBuffer.push(kph);
+        if (speedBuffer.length > 2) speedBuffer.shift();
+        const smoothKph = speedBuffer.reduce((a, b) => a + b, 0) / speedBuffer.length;
+
         gpsHasSpd = true;
-        rideData.spd    = kph;
-        rideData.maxSpd = Math.max(rideData.maxSpd, kph);
+        rideData.spd    = smoothKph;
+        rideData.maxSpd = Math.max(rideData.maxSpd, smoothKph);
       }
+    } else if (d <= 0.012) {
+      // No meaningful movement — reset speed buffer
+      speedBuffer = [];
     }
   }
   lastGPSPos  = [lat, lng];
@@ -1034,6 +1046,7 @@ function togglePause() {
   if (isPaused) {
     // ── PAUSE ──
     clearInterval(timerTick); clearInterval(simTick);
+    speedBuffer = []; // clear speed smoothing buffer while paused
     // Keep GPS watch running so we have current position on resume,
     // but onGPSPos will skip accumulation while isPaused=true.
 
@@ -1093,13 +1106,14 @@ function onMotion(e) {
   if (!a) return;
   accelMag = Math.sqrt((a.x || 0) ** 2 + (a.y || 0) ** 2 + (a.z || 0) ** 2);
 
-  // If barely moving, count consecutive low readings
-  if (accelMag < 0.4) {
+  // If barely moving (< 0.3 m/s²), count consecutive low readings
+  // After ~2 seconds of near-zero accel, force speed to 0 (more aggressive than before)
+  if (accelMag < 0.3) {
     accelLow++;
-    // After ~3 seconds of no movement, zero out speed
-    if (accelLow >= 3 && rideData && !isPaused) {
+    if (accelLow >= 2 && rideData && !isPaused) {
       rideData.spd = 0;
       gpsHasSpd = true; // suppress simulation
+      speedBuffer = []; // reset smoothing buffer
     }
   } else {
     accelLow = 0;
