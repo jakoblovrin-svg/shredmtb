@@ -591,13 +591,10 @@ function persistLB() { localStorage.setItem('mtb_lb',    JSON.stringify(lb)); }
 // ═══════════════════════════════════════════════════════
 //  RIDE STATE
 // ═══════════════════════════════════════════════════════
-let timerSec   = 0, timerTick = null, simTick = null;
+let timerSec   = 0, timerTick = null, uiTick = null;
 let rideData   = null, chosenDiff = null;
-let pendingImport = null; // set when a Garmin file has been parsed
-let isPaused   = false;   // true while ride is paused
-
-// Terrain simulation
-let terrain = 'flat', terrainTmr = 0, terrainDur = 12, curSpd = 6, tgtSpd = 18;
+let pendingImport = null;
+let isPaused   = false;
 
 // ═══════════════════════════════════════════════════════
 //  GPS
@@ -612,7 +609,7 @@ let lastGPSTime = null;   // for calculating speed from position delta
 let savedPath = [];       // preserved after stopGPS so save form can show map
 
 function startGPS() {
-  if (!navigator.geolocation) { setGPS('sim', 'SIM'); return; }
+  if (!navigator.geolocation) { setGPS('err', 'NO GPS'); return; }
   setGPS('searching', 'SEARCHING');
   gpsWatchId = navigator.geolocation.watchPosition(onGPSPos, onGPSErr,
     { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 });
@@ -652,14 +649,15 @@ function onGPSPos(pos) {
     const d  = haversine(lastGPSPos[0], lastGPSPos[1], lat, lng);
     const dt = (now - lastGPSTime) / 1000; // seconds between fixes
 
-    if (d < 0.5) {                          // sanity: ignore GPS jumps
+    // Only count movement ≥ 5m to filter GPS noise (jitter is typically 3-10m)
+    // and < 300m to reject GPS position jumps
+    if (d >= 0.005 && d < 0.3) {
       lastGPSDist += d;
       rideData.dist = lastGPSDist;
     }
 
-    // Calculate speed from position delta — reliable on all phones including iOS
-    // Require minimum 12m movement to filter GPS noise (typical GPS jitter is 5-10m)
-    if (dt > 0 && dt < 15 && d < 0.3 && d > 0.012) {
+    // Speed: require ≥ 10m movement to avoid phantom speed from GPS noise
+    if (dt > 0 && dt < 15 && d >= 0.010 && d < 0.3) {
       const calcKph = (d / dt) * 3600;
       if (calcKph < 120) {                  // ignore impossible readings
         // Prefer native coords.speed if available and plausible, else use calculated
@@ -677,8 +675,9 @@ function onGPSPos(pos) {
         rideData.spd    = smoothKph;
         rideData.maxSpd = Math.max(rideData.maxSpd, smoothKph);
       }
-    } else if (d <= 0.012) {
-      // No meaningful movement — reset speed buffer
+    } else if (d < 0.010) {
+      // No meaningful movement — zero speed and reset buffer
+      rideData.spd = 0;
       speedBuffer = [];
     }
   }
@@ -711,9 +710,9 @@ function onGPSPos(pos) {
 
 function onGPSErr() {
   if (!gpsActive) {
-    setGPS('sim', 'SIM');
+    setGPS('err', 'NO GPS');
     const ov = $('map-overlay');
-    if (ov) { ov.innerHTML = '<span>📍</span>No GPS — using simulation'; }
+    if (ov) ov.innerHTML = '<span>🔴</span>No GPS signal';
   }
 }
 
@@ -838,7 +837,6 @@ function showState(s) {
 function startRide() {
   timerSec = 0; isPaused = false;
   rideData = { dist: 0, elev: 0, maxSpd: 0, spd: 0 };
-  terrain = 'flat'; terrainTmr = 0; terrainDur = 12; curSpd = 5; tgtSpd = 18;
 
   // Reset pause button appearance
   const pbtn = $('pause-btn');
@@ -861,13 +859,13 @@ function startRide() {
     timerSec++;
     $('disp-run').textContent = fmtTime(timerSec);
   }, 1000);
-  simTick   = setInterval(simStep, 1000);
+  uiTick   = setInterval(uiStep, 1000);
 }
 
 let saveMap = null;
 
 function stopRide() {
-  clearInterval(timerTick); clearInterval(simTick);
+  clearInterval(timerTick); clearInterval(uiTick);
   isPaused = false;
   stopGPS(); stopAccel(); // savedPath is set inside stopGPS before clearing gpsPath
   populateSaveForm(false);
@@ -903,7 +901,7 @@ function initSaveMap() {
 }
 
 function discardRide() {
-  clearInterval(timerTick); clearInterval(simTick); stopGPS(); stopAccel();
+  clearInterval(timerTick); clearInterval(uiTick); stopGPS(); stopAccel();
   timerSec = 0; isPaused = false; rideData = null; chosenDiff = null; pendingImport = null; savedPath = [];
   $('disp-idle').textContent = '00:00:00';
   showState('idle');
@@ -967,66 +965,39 @@ function saveRide() {
 }
 
 // ═══════════════════════════════════════════════════════
-//  SIMULATION
+//  UI UPDATE TICK  (runs every second while riding)
 // ═══════════════════════════════════════════════════════
-function simStep() {
-  terrainTmr++;
-  if (terrainTmr >= terrainDur) {
-    const opts = ['climb','descend','flat'].filter(t => t !== terrain);
-    terrain = Math.random() < .5 ? opts[0] : opts[1];
-    terrainDur = 8 + Math.floor(Math.random() * 22);
-    terrainTmr = 0;
-  }
-  switch(terrain) {
-    case 'climb':   tgtSpd = 3  + Math.random() * 11; break;
-    case 'descend': tgtSpd = 18 + Math.random() * 34; break;
-    case 'flat':    tgtSpd = 11 + Math.random() * 17; break;
-  }
-  curSpd += (tgtSpd - curSpd) * .18 + (Math.random() - .5) * 1.8;
-  curSpd = Math.max(.5, Math.min(58, curSpd));
+function uiStep() {
+  if (!rideData) return;
+  const spd = rideData.spd;
 
-  // ── Speed: ONLY from real GPS or accelerometer (no simulation) ──
-  // If no GPS speed data yet, speed stays at 0 until real movement detected
-
-  // ── Distance: only accumulate from sim when GPS is not tracking ──
-  if (!gpsActive) {
-    rideData.dist += curSpd / 3600;
-  }
-
-  // ── Elevation: only simulate when GPS altitude not available ──
-  if (!gpsHasAlt) {
-    if (terrain === 'climb') rideData.elev += (rideData.spd / 3600) * 1000 * .13;
-  }
-
-  // ── Update DOM ──
-  const spd = rideData.spd;  // ONLY real GPS speed, no simulation fallback
   $('l-dist').textContent = rideData.dist.toFixed(2);
   $('l-elev').textContent = Math.round(rideData.elev);
   $('l-spd') .textContent = spd.toFixed(1);
   $('l-max') .textContent = rideData.maxSpd.toFixed(1);
 
-  // Altitude readout (only when GPS altitude available)
   const altEl = $('l-alt');
   if (altEl) altEl.textContent = rideData.altitude != null ? rideData.altitude : '—';
 
-  // ── Avg speed = distance ÷ elapsed ride time ──
+  // Avg speed = total distance ÷ elapsed riding time
   const avgEl = $('l-avg');
-  if (avgEl) avgEl.textContent = timerSec > 5 ? ((rideData.dist / timerSec) * 3600).toFixed(1) : '0.0';
+  if (avgEl) avgEl.textContent = timerSec > 5 && rideData.dist > 0
+    ? ((rideData.dist / timerSec) * 3600).toFixed(1) : '0.0';
 
-  // ── Max-speed % bar ──
+  // Max-speed % bar
   const maxS = rideData.maxSpd > 0 ? rideData.maxSpd : 1;
-  const pct  = Math.min(100, (spd / maxS) * 100);
+  const pct  = rideData.maxSpd > 0 ? Math.min(100, (spd / maxS) * 100) : 0;
   $('spd-fill').style.width = pct + '%';
-  $('spd-pct') .textContent = spd.toFixed(1) + ' km/h\u00a0·\u00a0' + Math.round(pct) + '% of max';
+  $('spd-pct').textContent  = spd.toFixed(1) + ' km/h\u00a0·\u00a0' + Math.round(pct) + '% of max';
   const maxLbl = $('spd-max-lbl');
   if (maxLbl) maxLbl.textContent = 'MAX ' + rideData.maxSpd.toFixed(1) + ' km/h';
 
-  // ── Data source labels ──
-  $('spd-src').textContent = gpsHasSpd ? '📡 GPS Speed' : '🎮 Simulated';
-  const elevSrc = $('elev-src');
-  if (elevSrc) elevSrc.textContent = gpsHasAlt ? '📡 GPS' : '🎮 SIM';
+  // Source label — GPS status only, no "Simulated" ever
+  $('spd-src').textContent = gpsActive ? '📡 GPS' : '⏳ Waiting for GPS…';
   const distSrc = $('dist-src');
-  if (distSrc) distSrc.textContent = gpsActive ? '📡 GPS' : '🎮 SIM';
+  if (distSrc) distSrc.textContent = gpsActive ? '📡' : '';
+  const elevSrc = $('elev-src');
+  if (elevSrc) elevSrc.textContent = gpsHasAlt ? '📡' : '';
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1042,7 +1013,7 @@ function togglePause() {
 
   if (isPaused) {
     // ── PAUSE ──
-    clearInterval(timerTick); clearInterval(simTick);
+    clearInterval(timerTick); clearInterval(uiTick);
     speedBuffer = []; // clear speed smoothing buffer while paused
     // Keep GPS watch running so we have current position on resume,
     // but onGPSPos will skip accumulation while isPaused=true.
@@ -1063,7 +1034,7 @@ function togglePause() {
       timerSec++;
       $('disp-run').textContent = fmtTime(timerSec);
     }, 1000);
-    simTick = setInterval(simStep, 1000);
+    uiTick = setInterval(uiStep, 1000);
 
     btn.classList.remove('resuming');
     // Swap back to pause icon
@@ -1109,8 +1080,7 @@ function onMotion(e) {
     accelLow++;
     if (accelLow >= 2 && rideData && !isPaused) {
       rideData.spd = 0;
-      // DON'T set gpsHasSpd=true — let simulation still run for testing on table
-      speedBuffer = []; // reset smoothing buffer
+      speedBuffer = [];
     }
   } else {
     accelLow = 0;
