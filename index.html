@@ -999,7 +999,7 @@ function simStep() {
   }
 
   // ── Update DOM ──
-  const spd = rideData.spd || curSpd;
+  const spd = rideData.spd;  // ONLY real GPS speed, no simulation fallback
   $('l-dist').textContent = rideData.dist.toFixed(2);
   $('l-elev').textContent = Math.round(rideData.elev);
   $('l-spd') .textContent = spd.toFixed(1);
