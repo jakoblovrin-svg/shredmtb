@@ -103,6 +103,9 @@
     .btn-primary { background:var(--orange); color:#fff; }
     .btn-primary:hover { background:#e05500; }
     .btn-stop  { background:#1c1c1c; color:#fff; border:1px solid #333; }
+    .btn-pause { background:rgba(77,157,224,.15); color:var(--blue); border:1px solid rgba(77,157,224,.4); }
+    .btn-pause.resuming { background:rgba(61,204,110,.15); color:var(--green); border-color:rgba(61,204,110,.4); }
+    .timer-display.paused { color:var(--blue); }
     .btn-danger{ background:transparent; color:#d93535; border:1px solid rgba(217,53,53,.3); }
     .btn-danger:hover { background:rgba(217,53,53,.08); }
     .btn-outline{ background:transparent; color:var(--text); border:1px solid var(--border); }
@@ -323,9 +326,8 @@
       <!-- RUNNING -->
       <div id="s-run" style="display:none">
         <div class="timer-hero">
-          <div class="timer-label">Riding</div>
+          <div class="timer-label" id="ride-label">Riding</div>
           <div class="timer-display active" id="disp-run">00:00:00</div>
-          <div class="terrain-pill flat" id="terrain-pill">→ FLAT</div>
         </div>
 
         <div class="map-section">
@@ -360,24 +362,35 @@
             <div class="live-cell-unit">m asl</div>
           </div>
           <div class="live-cell">
-            <div class="live-cell-lbl">Duration</div>
-            <div class="live-cell-val" id="l-dur" style="font-size:28px">0:00</div>
-            <div class="live-cell-unit">riding</div>
+            <div class="live-cell-lbl">Avg Speed</div>
+            <div class="live-cell-val" id="l-avg" style="font-size:28px">0.0</div>
+            <div class="live-cell-unit">km/h</div>
           </div>
         </div>
 
+        <!-- Max speed % bar -->
         <div class="speed-meter">
           <div class="speed-head">
-            <span id="spd-src">Speed</span><span id="spd-pct">0%</span>
+            <span id="spd-src">📡 Speed</span>
+            <span id="spd-pct" style="font-size:13px;font-weight:800;color:var(--text)">— km/h &nbsp;·&nbsp; —% of max</span>
           </div>
           <div class="speed-track"><div class="speed-fill" id="spd-fill"></div></div>
+          <div style="display:flex;justify-content:space-between;margin-top:5px;font-family:'Barlow Condensed',sans-serif;font-size:10px;color:var(--muted);letter-spacing:1px">
+            <span>0</span><span id="spd-max-lbl">MAX 0 km/h</span>
+          </div>
         </div>
 
         <div class="controls">
-          <button class="btn btn-stop" onclick="stopRide()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-            STOP RIDE
-          </button>
+          <div style="display:flex;gap:9px">
+            <button class="btn btn-stop" style="flex:1" onclick="stopRide()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+              STOP
+            </button>
+            <button class="btn btn-pause" style="flex:1" id="pause-btn" onclick="togglePause()">
+              <svg id="pause-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+              <span id="pause-label">PAUSE</span>
+            </button>
+          </div>
           <button class="btn btn-danger" onclick="discardRide()">✕ DISCARD</button>
         </div>
       </div>
@@ -581,6 +594,7 @@ function persistLB() { localStorage.setItem('mtb_lb',    JSON.stringify(lb)); }
 let timerSec   = 0, timerTick = null, simTick = null;
 let rideData   = null, chosenDiff = null;
 let pendingImport = null; // set when a Garmin file has been parsed
+let isPaused   = false;   // true while ride is paused
 
 // Terrain simulation
 let terrain = 'flat', terrainTmr = 0, terrainDur = 12, curSpd = 6, tgtSpd = 18;
@@ -622,6 +636,13 @@ function onGPSPos(pos) {
     if (ov) ov.style.display = 'none';
     if (rideMap) rideMap.setView([lat, lng], 16);
   }
+
+  // Always track path and map position, but only accumulate stats when riding
+  gpsPath.push([lat, lng]);
+  updateRideMap(lat, lng);
+
+  // Don't accumulate stats while paused
+  if (isPaused) { lastGPSPos = [lat, lng]; lastGPSTime = Date.now(); return; }
 
   // ── Real distance + speed from GPS coordinates ──
   const now = Date.now();
@@ -674,9 +695,6 @@ function onGPSPos(pos) {
     // Store current altitude for display
     rideData.altitude = Math.round(smoothAlt);
   }
-
-  gpsPath.push([lat, lng]);
-  updateRideMap(lat, lng);
 }
 
 function onGPSErr() {
@@ -806,9 +824,16 @@ function showState(s) {
 //  START / STOP / DISCARD
 // ═══════════════════════════════════════════════════════
 function startRide() {
-  timerSec = 0;
+  timerSec = 0; isPaused = false;
   rideData = { dist: 0, elev: 0, maxSpd: 0, spd: 0 };
   terrain = 'flat'; terrainTmr = 0; terrainDur = 12; curSpd = 5; tgtSpd = 18;
+
+  // Reset pause button appearance
+  const pbtn = $('pause-btn');
+  if (pbtn) { pbtn.classList.remove('resuming'); }
+  const plbl = $('pause-label'); if (plbl) plbl.textContent = 'PAUSE';
+  const disp = $('disp-run'); if (disp) { disp.classList.add('active'); disp.classList.remove('paused'); }
+  const rlbl = $('ride-label'); if (rlbl) rlbl.textContent = 'Riding';
 
   showState('run');
   setTimeout(() => {
@@ -819,11 +844,10 @@ function startRide() {
   }, 50);
 
   startGPS();
+  startAccel();
   timerTick = setInterval(() => {
     timerSec++;
     $('disp-run').textContent = fmtTime(timerSec);
-    const durEl = $('l-dur');
-    if (durEl) durEl.textContent = fmtShort(timerSec);
   }, 1000);
   simTick   = setInterval(simStep, 1000);
 }
@@ -832,7 +856,8 @@ let saveMap = null;
 
 function stopRide() {
   clearInterval(timerTick); clearInterval(simTick);
-  stopGPS(); // savedPath is set inside stopGPS before clearing gpsPath
+  isPaused = false;
+  stopGPS(); stopAccel(); // savedPath is set inside stopGPS before clearing gpsPath
   populateSaveForm(false);
   showState('save');
   // Show the recorded path on the save form
@@ -866,8 +891,8 @@ function initSaveMap() {
 }
 
 function discardRide() {
-  clearInterval(timerTick); clearInterval(simTick); stopGPS();
-  timerSec = 0; rideData = null; chosenDiff = null; pendingImport = null; savedPath = [];
+  clearInterval(timerTick); clearInterval(simTick); stopGPS(); stopAccel();
+  timerSec = 0; isPaused = false; rideData = null; chosenDiff = null; pendingImport = null; savedPath = [];
   $('disp-idle').textContent = '00:00:00';
   showState('idle');
 }
@@ -975,20 +1000,110 @@ function simStep() {
   const altEl = $('l-alt');
   if (altEl) altEl.textContent = rideData.altitude != null ? rideData.altitude : '—';
 
-  const pct = Math.min(100, (spd / 58) * 100);
-  $('spd-fill').style.width = pct + '%';
-  $('spd-pct') .textContent = Math.round(pct) + '%';
+  // ── Avg speed = distance ÷ elapsed ride time ──
+  const avgEl = $('l-avg');
+  if (avgEl) avgEl.textContent = timerSec > 5 ? ((rideData.dist / timerSec) * 3600).toFixed(1) : '0.0';
 
-  // Show data source labels
+  // ── Max-speed % bar ──
+  const maxS = rideData.maxSpd > 0 ? rideData.maxSpd : 1;
+  const pct  = Math.min(100, (spd / maxS) * 100);
+  $('spd-fill').style.width = pct + '%';
+  $('spd-pct') .textContent = spd.toFixed(1) + ' km/h\u00a0·\u00a0' + Math.round(pct) + '% of max';
+  const maxLbl = $('spd-max-lbl');
+  if (maxLbl) maxLbl.textContent = 'MAX ' + rideData.maxSpd.toFixed(1) + ' km/h';
+
+  // ── Data source labels ──
   $('spd-src').textContent = gpsHasSpd ? '📡 GPS Speed' : '🎮 Simulated';
   const elevSrc = $('elev-src');
   if (elevSrc) elevSrc.textContent = gpsHasAlt ? '📡 GPS' : '🎮 SIM';
   const distSrc = $('dist-src');
   if (distSrc) distSrc.textContent = gpsActive ? '📡 GPS' : '🎮 SIM';
+}
 
-  const pill = $('terrain-pill');
-  pill.className = 'terrain-pill ' + terrain;
-  pill.textContent = { climb:'↑ CLIMBING', descend:'↓ DESCENDING', flat:'→ FLAT' }[terrain];
+// ═══════════════════════════════════════════════════════
+//  PAUSE / RESUME
+// ═══════════════════════════════════════════════════════
+function togglePause() {
+  isPaused = !isPaused;
+
+  const btn   = $('pause-btn');
+  const label = $('pause-label');
+  const dispR = $('disp-run');
+  const rlbl  = $('ride-label');
+
+  if (isPaused) {
+    // ── PAUSE ──
+    clearInterval(timerTick); clearInterval(simTick);
+    // Keep GPS watch running so we have current position on resume,
+    // but onGPSPos will skip accumulation while isPaused=true.
+
+    btn.classList.add('resuming');
+    // Swap to play icon
+    $('pause-icon').innerHTML = '<polygon points="5 3 19 12 5 21 5 3"/>';
+    label.textContent = 'RESUME';
+    dispR.classList.remove('active');
+    dispR.classList.add('paused');
+    rlbl.textContent = 'Paused';
+  } else {
+    // ── RESUME ──
+    // Reset lastGPSTime so first position after resume doesn't give a wrong speed spike
+    lastGPSTime = null;
+
+    timerTick = setInterval(() => {
+      timerSec++;
+      $('disp-run').textContent = fmtTime(timerSec);
+    }, 1000);
+    simTick = setInterval(simStep, 1000);
+
+    btn.classList.remove('resuming');
+    // Swap back to pause icon
+    $('pause-icon').innerHTML = '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>';
+    label.textContent = 'PAUSE';
+    dispR.classList.add('active');
+    dispR.classList.remove('paused');
+    rlbl.textContent = 'Riding';
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  ACCELEROMETER  (standstill detection)
+// ═══════════════════════════════════════════════════════
+let accelMag = 0, accelLow = 0; // counts consecutive low-accel readings
+
+function startAccel() {
+  if (typeof DeviceMotionEvent === 'undefined') return;
+  // iOS 13+ needs permission
+  if (typeof DeviceMotionEvent.requestPermission === 'function') {
+    DeviceMotionEvent.requestPermission()
+      .then(state => { if (state === 'granted') window.addEventListener('devicemotion', onMotion, { passive: true }); })
+      .catch(() => {});
+  } else {
+    window.addEventListener('devicemotion', onMotion, { passive: true });
+  }
+}
+
+function stopAccel() {
+  window.removeEventListener('devicemotion', onMotion);
+  accelMag = 0; accelLow = 0;
+}
+
+function onMotion(e) {
+  // Use acceleration WITHOUT gravity if available (more accurate), else with gravity
+  const a = e.acceleration && (e.acceleration.x != null) ? e.acceleration : e.accelerationIncludingGravity;
+  if (!a) return;
+  accelMag = Math.sqrt((a.x || 0) ** 2 + (a.y || 0) ** 2 + (a.z || 0) ** 2);
+
+  // If barely moving, count consecutive low readings
+  if (accelMag < 0.4) {
+    accelLow++;
+    // After ~3 seconds of no movement, zero out speed
+    if (accelLow >= 3 && rideData && !isPaused) {
+      rideData.spd = 0;
+      gpsHasSpd = true; // suppress simulation
+    }
+  } else {
+    accelLow = 0;
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1167,7 +1282,7 @@ function renderHistory() {
       <div class="ride-body">
         <div class="detail-grid">
           <div class="detail-item"><div class="detail-v">${r.dist}</div><div class="detail-l">km</div></div>
-          <div class="detail-item"><div class="detail-v">${r.elev}m</div><div class="detail-l">Elev</div></div>
+          <div class="detail-item"><div class="detail-v">${r.elev}m</div><div class="detail-l">Elev Gain</div></div>
           <div class="detail-item"><div class="detail-v">${fmtShort(r.duration)}</div><div class="detail-l">Time</div></div>
           <div class="detail-item"><div class="detail-v">${r.maxSpd}</div><div class="detail-l">Max km/h</div></div>
           <div class="detail-item"><div class="detail-v">${r.avgSpd}</div><div class="detail-l">Avg km/h</div></div>
@@ -1176,6 +1291,16 @@ function renderHistory() {
             : `<div class="detail-item"><div class="detail-v" style="color:${diffColor(r.diff)}">${diffLabel(r.diff).split(' ')[0]}</div><div class="detail-l">Grade</div></div>`
           }
           ${r.maxHr ? `<div class="detail-item"><div class="detail-v heart">${r.maxHr}</div><div class="detail-l">Max HR</div></div>` : ''}
+          ${(()=>{
+            // Pace: min per km (only meaningful if dist > 0)
+            const paceMin = r.dist > 0 ? (r.duration / 60) / r.dist : 0;
+            const pm = Math.floor(paceMin), ps = Math.round((paceMin - pm) * 60);
+            const paceStr = r.dist > 0 ? `${pm}:${String(ps).padStart(2,'0')}` : '—';
+            // Calories: rough MTB estimate ~500 kcal/hr × duration
+            const kcal = Math.round((r.duration / 3600) * 500);
+            return `<div class="detail-item"><div class="detail-v" style="font-size:18px">${paceStr}</div><div class="detail-l">min/km</div></div>
+                    <div class="detail-item"><div class="detail-v">~${kcal}</div><div class="detail-l">kcal</div></div>`;
+          })()}
         </div>
         ${r.notes ? `<div class="ride-notes-txt">"${esc(r.notes)}"</div>` : ''}
         ${r.path && r.path.length > 1 ? `<div class="card-map-wrap"><div class="card-map-el" id="cmap-${r.id}"></div></div>` : ''}
