@@ -58,10 +58,6 @@
     main { flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; padding-bottom:72px; }
     .view { display:none; }
     .view.active { display:block; }
-    @keyframes slideFromRight { from{transform:translateX(40px);opacity:0} to{transform:translateX(0);opacity:1} }
-    @keyframes slideFromLeft  { from{transform:translateX(-40px);opacity:0} to{transform:translateX(0);opacity:1} }
-    .view.slide-right { animation:slideFromRight .22s cubic-bezier(.4,0,.2,1) both; }
-    .view.slide-left  { animation:slideFromLeft  .22s cubic-bezier(.4,0,.2,1) both; }
 
     /* ── NAV ── */
     nav { position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:430px; background:#0a0a0a; border-top:1px solid var(--border); display:flex; z-index:100; }
@@ -881,62 +877,21 @@ function simplifyPath(path, max) {
 }
 
 // ═══════════════════════════════════════════════════════
-//  VIEW SWITCHING + SWIPE
+//  VIEW SWITCHING
 // ═══════════════════════════════════════════════════════
-const TAB_ORDER = ['timer', 'history', 'stats', 'board'];
 let activeTab = 'timer';
-let _switching = false; // debounce rapid swipes
 
-function switchView(v, dir) {
-  // dir: 1 = slide from right (swipe left), -1 = slide from left (swipe right), 0 = no anim
-  if (_switching) return;
-  _switching = true;
-  setTimeout(() => _switching = false, 250);
-
-  const fromIdx = TAB_ORDER.indexOf(activeTab);
-  const toIdx   = TAB_ORDER.indexOf(v);
-  if (dir == null) dir = toIdx > fromIdx ? 1 : toIdx < fromIdx ? -1 : 0;
-
+function switchView(v) {
   activeTab = v;
-  document.querySelectorAll('.view').forEach(el => {
-    el.classList.remove('active', 'slide-right', 'slide-left');
-  });
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
-
-  const newView = $('view-' + v);
-  newView.classList.add('active');
-  if (dir === 1)  newView.classList.add('slide-right');
-  if (dir === -1) newView.classList.add('slide-left');
-
-  $('nav-' + v).classList.add('active');
+  $('view-' + v).classList.add('active');
+  $('nav-'  + v).classList.add('active');
   if (v === 'history') renderHistory();
   if (v === 'stats')   renderStats();
   if (v === 'board')   renderBoardView();
   if (v === 'timer' && rideMap) setTimeout(() => rideMap.invalidateSize(), 50);
 }
-
-// ── Swipe between tabs ──
-(function initSwipe() {
-  const main = document.querySelector('main');
-  let sx = 0, sy = 0, sTime = 0;
-
-  main.addEventListener('touchstart', e => {
-    sx = e.touches[0].clientX;
-    sy = e.touches[0].clientY;
-    sTime = Date.now();
-  }, { passive: true });
-
-  main.addEventListener('touchend', e => {
-    const dx = e.changedTouches[0].clientX - sx;
-    const dy = e.changedTouches[0].clientY - sy;
-    const dt = Date.now() - sTime;
-    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.8 && dt < 400) {
-      const cur = TAB_ORDER.indexOf(activeTab);
-      if (dx < 0 && cur < TAB_ORDER.length - 1) switchView(TAB_ORDER[cur + 1],  1);
-      else if (dx > 0 && cur > 0)                switchView(TAB_ORDER[cur - 1], -1);
-    }
-  });
-})();
 
 // ═══════════════════════════════════════════════════════
 //  TIMER STATES
@@ -1019,7 +974,8 @@ function initSaveMap() {
 
 function discardRide() {
   clearInterval(timerTick); clearInterval(uiTick); stopGPS(); stopAccel();
-  timerSec = 0; isPaused = false; rideData = null; chosenDiff = null; pendingImport = null; savedPath = [];
+  timerSec = 0; isPaused = false; isSaving = false;
+  rideData = null; chosenDiff = null; pendingImport = null; savedPath = [];
   pendingMedia = [];
   $('disp-idle').textContent = '00:00:00';
   showState('idle');
@@ -1037,9 +993,8 @@ function populateSaveForm(isImport) {
   chosenDiff = null;
   document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('sel'));
   pendingMedia = [];
+  isSaving = false;
   renderMediaGrid();
-  const saveBtn = document.querySelector('#s-save .btn-primary');
-  if (saveBtn) saveBtn.disabled = false;
 }
 
 function pickDiff(btn) {
@@ -1050,21 +1005,21 @@ function pickDiff(btn) {
 // ═══════════════════════════════════════════════════════
 //  SAVE RIDE
 // ═══════════════════════════════════════════════════════
+let isSaving = false; // hard guard — prevents any double-save
+
 function saveRide() {
-  // Guard against double-tap: disable button immediately
-  const saveBtn = document.querySelector('#s-save .btn-primary');
-  if (saveBtn && saveBtn.disabled) return;
-  if (saveBtn) saveBtn.disabled = true;
+  if (isSaving) return;
 
   const trail = $('inp-trail').value.trim();
   if (!trail) {
     $('inp-trail').classList.add('err'); $('inp-trail').focus();
-    setTimeout(() => { $('inp-trail').classList.remove('err'); if (saveBtn) saveBtn.disabled = false; }, 1600);
+    setTimeout(() => $('inp-trail').classList.remove('err'), 1600);
     return;
   }
   const isImport = !!pendingImport;
-  // Guard: if somehow called with no data, bail
-  if (!isImport && !rideData) { showState('idle'); return; }
+  if (!isImport && !rideData) { showState('idle'); return; } // already cleared
+  isSaving = true; // lock — released only in populateSaveForm / discardRide
+
   const src = isImport ? pendingImport : rideData;
   const dur = isImport ? pendingImport.duration : timerSec;
   const avgSpd = dur > 0 ? +((src.dist / dur) * 3600).toFixed(1) : 0;
@@ -1089,12 +1044,16 @@ function saveRide() {
 
   rides.unshift(ride);
   persistNow();
-  pendingImport = null; timerSec = 0; rideData = null; chosenDiff = null; gpsPath = [];
-  pendingMedia = []; savedPath = [];
-  _historyRenderKey = null; // force re-render on next visit
+
+  // Clear all state immediately so any re-entrant call finds nothing to save
+  pendingImport = null; rideData = null; timerSec = 0;
+  chosenDiff = null; gpsPath = []; pendingMedia = []; savedPath = [];
+  isSaving = false;
+  _historyRenderKey = null;
+
   showState('idle');
   toastMsg('✓ Ride saved!');
-  switchView('history', 1);
+  switchView('history');
 }
 
 // ═══════════════════════════════════════════════════════
