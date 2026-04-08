@@ -627,6 +627,7 @@
     <!-- ══════════ STATS VIEW ══════════ -->
     <div id="view-stats" class="view">
       <div class="view-hdr"><div class="view-ttl">Stats</div></div>
+      <div id="heatmap-container" style="display:none;margin:0 0 12px 0"></div>
       <div class="stats-wrap" id="stats-wrap"></div>
     </div>
 
@@ -645,6 +646,13 @@
           <select class="trail-sel-select" id="trail-sel" onchange="renderBoard()">
             <option value="">— Select a trail —</option>
           </select>
+        </div>
+
+        <div id="sort-buttons" style="display:none;margin:12px 0;gap:8px;display:flex;flex-wrap:wrap">
+          <button class="diff-btn sel" data-sort="time" onclick="setSortBy('time');renderBoard()" style="flex:1;font-size:12px">⏱ Time</button>
+          <button class="diff-btn" data-sort="avgspeed" onclick="setSortBy('avgspeed');renderBoard()" style="flex:1;font-size:12px">⚡ Avg Spd</button>
+          <button class="diff-btn" data-sort="elevation" onclick="setSortBy('elevation');renderBoard()" style="flex:1;font-size:12px">📈 Elev</button>
+          <button class="diff-btn" data-sort="distance" onclick="setSortBy('distance');renderBoard()" style="flex:1;font-size:12px">📏 Dist</button>
         </div>
 
         <div id="board-content"></div>
@@ -747,6 +755,30 @@
           <input type="text" class="form-inp" id="inp-defbike" placeholder="e.g. Trek Slash" maxlength="40" oninput="settings.bike=this.value;persistSettings()">
         </div>
 
+        <!-- Bike Garage -->
+        <div class="s-card" style="margin-bottom:10px">
+          <div class="s-lbl" style="margin-bottom:12px">🚴 Bike Garage</div>
+          <div id="bike-garage-list"></div>
+          <button class="btn btn-outline btn-sm" onclick="showAddBikeForm()" style="width:100%;margin-top:8px">+ Add Bike</button>
+          <div id="bike-add-form" style="display:none;margin-top:12px;padding:12px;background:rgba(255,165,0,.1);border-radius:8px">
+            <input type="text" class="form-inp" id="bike-name-inp" placeholder="Bike name (e.g. Trek Slash)" maxlength="40">
+            <input type="text" class="form-inp" id="bike-brand-inp" placeholder="Brand/Model" maxlength="60" style="margin-top:8px">
+            <select class="form-inp" id="bike-type-sel" style="margin-top:8px">
+              <option value="">Select type</option>
+              <option value="Enduro">Enduro</option>
+              <option value="Downhill">Downhill</option>
+              <option value="XC">XC</option>
+              <option value="Trail">Trail</option>
+              <option value="Gravel">Gravel</option>
+              <option value="Road">Road</option>
+            </select>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="btn btn-primary" style="flex:1" onclick="saveBike()">Save</button>
+              <button class="btn btn-outline" style="flex:1" onclick="cancelAddBike()">Cancel</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Data management -->
         <div class="s-card">
           <div class="s-lbl" style="margin-bottom:12px">Data</div>
@@ -814,7 +846,7 @@ if ('serviceWorker' in navigator) {
 let rides = JSON.parse(localStorage.getItem('mtb_rides') || '[]');
 let lb    = JSON.parse(localStorage.getItem('mtb_lb')    || '{"riderName":"","rivals":[]}');
 let settings = JSON.parse(localStorage.getItem('mtb_settings') || '{}');
-settings = { units: 'metric', theme: 'dark', maxHR: 190, bike: '', ...settings };
+settings = { units: 'metric', theme: 'dark', maxHR: 190, bike: '', bikes: [], ...settings };
 function persistSettings() { localStorage.setItem('mtb_settings', JSON.stringify(settings)); }
 
 // Unit helper functions
@@ -1179,7 +1211,7 @@ function switchView(v) {
   if (v === 'history') renderHistory();
   if (v === 'stats')   renderStats();
   if (v === 'board')   renderBoardView();
-  if (v === 'settings') applySettings();
+  if (v === 'settings') { applySettings(); renderBikeGarage(); }
   if (v === 'timer' && rideMap) setTimeout(() => rideMap.invalidateSize(), 50);
 }
 
@@ -1305,6 +1337,143 @@ function pickCat(btn) {
 // ═══════════════════════════════════════════════════════
 let isSaving = false; // hard guard — prevents any double-save
 
+function detectRideHighlights(path) {
+  if (!path || path.length < 10) return {};
+
+  const highlights = {};
+
+  // Extract speeds
+  const speeds = path.map(p => p[3] || 0).filter(s => s > 0);
+  if (speeds.length === 0) return highlights;
+
+  const maxSpeed = Math.max(...speeds);
+  const maxSpeedIdx = path.findIndex(p => (p[3] || 0) === maxSpeed);
+  if (maxSpeedIdx >= 0) {
+    let distToMax = 0;
+    for (let i = 0; i < maxSpeedIdx; i++) {
+      distToMax += haversine(path[i][0], path[i][1], path[i+1][0], path[i+1][1]);
+    }
+    highlights.speedRecord = { speed: maxSpeed, distKm: distToMax, idx: maxSpeedIdx };
+  }
+
+  // Find fastest section (avg speed > 80% max for > 5 consecutive points)
+  const threshold = maxSpeed * 0.8;
+  let fastStart = null, fastEnd = null, fastDist = 0, fastSpds = [];
+  for (let i = 0; i < path.length; i++) {
+    const spd = path[i][3] || 0;
+    if (spd > threshold) {
+      if (fastStart === null) fastStart = i;
+      fastEnd = i;
+      fastSpds.push(spd);
+      if (i > 0) fastDist += haversine(path[i-1][0], path[i-1][1], path[i][0], path[i][1]);
+    } else {
+      if (fastStart !== null && fastEnd - fastStart > 4 && fastDist > 0) {
+        highlights.fastSection = { startIdx: fastStart, endIdx: fastEnd, distKm: fastDist, avgSpd: fastSpds.reduce((a,b)=>a+b)/fastSpds.length };
+        break;
+      }
+      fastStart = null;
+      fastSpds = [];
+      fastDist = 0;
+    }
+  }
+
+  // Find steepest climb
+  let steepestGrade = 0, steepStartIdx = 0, steepDist = 0, steepElev = 0;
+  let currentGrade = 0, currentStart = 0, currentDist = 0, currentElev = 0;
+  for (let i = 1; i < path.length; i++) {
+    const p = path[i], prev = path[i-1];
+    const d = haversine(prev[0], prev[1], p[0], p[1]);
+    const dalt = (p[2] != null && prev[2] != null) ? p[2] - prev[2] : 0;
+    const grade = d > 0 ? (dalt / (d * 1000)) * 100 : 0;
+
+    if (grade > 2) {  // climbing
+      if (currentGrade === 0) currentStart = i - 1;
+      currentGrade += grade;
+      currentDist += d;
+      currentElev += dalt;
+    } else {
+      if (currentDist > 0.1 && currentGrade > steepestGrade) {
+        steepestGrade = currentGrade / Math.max(1, currentDist * 1000 / 10);
+        steepStartIdx = currentStart;
+        steepDist = currentDist;
+        steepElev = currentElev;
+      }
+      currentGrade = 0;
+      currentDist = 0;
+      currentElev = 0;
+    }
+  }
+  if (currentDist > 0.1 && currentGrade > steepestGrade) {
+    steepestGrade = currentGrade / Math.max(1, currentDist * 1000 / 10);
+    steepStartIdx = currentStart;
+    steepDist = currentDist;
+    steepElev = currentElev;
+  }
+  if (steepDist > 0.1) {
+    highlights.steepClimb = { startIdx: steepStartIdx, distKm: steepDist, elevGain: steepElev, avgGrade: steepestGrade };
+  }
+
+  // Find longest descent
+  let longestDescent = 0, descentStartIdx = 0, descentDist = 0, descentElev = 0;
+  let currentDescentDist = 0, currentDescentElev = 0, currentDescentStart = 0;
+  for (let i = 1; i < path.length; i++) {
+    const p = path[i], prev = path[i-1];
+    const d = haversine(prev[0], prev[1], p[0], p[1]);
+    const dalt = (p[2] != null && prev[2] != null) ? p[2] - prev[2] : 0;
+
+    if (dalt < -0.5) {  // descending
+      if (currentDescentDist === 0) currentDescentStart = i - 1;
+      currentDescentDist += d;
+      currentDescentElev += Math.abs(dalt);
+    } else {
+      if (currentDescentDist > longestDescent) {
+        longestDescent = currentDescentDist;
+        descentStartIdx = currentDescentStart;
+        descentDist = currentDescentDist;
+        descentElev = currentDescentElev;
+      }
+      currentDescentDist = 0;
+      currentDescentElev = 0;
+    }
+  }
+  if (currentDescentDist > longestDescent) {
+    longestDescent = currentDescentDist;
+    descentStartIdx = currentDescentStart;
+    descentDist = currentDescentDist;
+    descentElev = currentDescentElev;
+  }
+  if (descentDist > 0.1) {
+    highlights.longestDescent = { startIdx: descentStartIdx, distKm: descentDist, elevLoss: descentElev };
+  }
+
+  return highlights;
+}
+
+async function fetchWeatherForRide(lat, lng) {
+  if (!navigator.onLine) return null;
+  try {
+    const resp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true`);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (data.current_weather) {
+      const { temperature, windspeed, weather_code } = data.current_weather;
+      return { temp: temperature, windspeed: windspeed, weathercode: weather_code };
+    }
+  } catch (e) {}
+  return null;
+}
+
+function getWeatherIcon(code) {
+  if (code === 0) return '☀️';
+  if (code >= 1 && code <= 3) return '⛅';
+  if (code === 45 || code === 48) return '🌫️';
+  if (code >= 51 && code <= 67) return '🌧️';
+  if (code >= 71 && code <= 77) return '🌨️';
+  if (code >= 80 && code <= 82) return '🌦️';
+  if (code >= 95 && code <= 99) return '⛈️';
+  return '🌡️';
+}
+
 function saveRide() {
   if (isSaving) return;
 
@@ -1349,8 +1518,21 @@ function saveRide() {
     avgHr:   isImport ? pendingImport.avgHr : null,
     maxHr:   isImport ? pendingImport.maxHr : null,
     source:  isImport ? 'garmin' : 'app',
-    media: pendingMedia.length ? [...pendingMedia] : []
+    media: pendingMedia.length ? [...pendingMedia] : [],
+    weather: null,
+    bikeId: null
   };
+
+  // Fetch weather if we have GPS position and online
+  if (!isImport && savedPath.length > 0) {
+    const firstPos = savedPath[0];
+    fetchWeatherForRide(firstPos[0], firstPos[1]).then(wx => {
+      if (wx) {
+        ride.weather = wx;
+        persistNow();
+      }
+    });
+  }
 
   rides.unshift(ride);
   persistNow();
@@ -2116,6 +2298,42 @@ function openRideDetail(rideId) {
     <div class="detail-item"><div class="detail-stat-v">~${kcal}</div><div class="detail-stat-l">kcal</div></div>
   </div>`;
 
+  // Weather
+  if (r.weather) {
+    html += `<div class="detail-section" style="display:flex;gap:12px;align-items:center;padding:12px;background:rgba(255,165,0,.1);border-radius:8px">
+      <div style="font-size:28px">${getWeatherIcon(r.weather.weathercode)}</div>
+      <div>
+        <div style="font-weight:600">${Math.round(r.weather.temp)}°</div>
+        <div style="font-size:12px;color:var(--dim)">Wind ${Math.round(r.weather.windspeed)} km/h</div>
+      </div>
+    </div>`;
+  }
+
+  // Ride Highlights
+  if (r.path && r.path.length > 20) {
+    const highlights = detectRideHighlights(r.path);
+    if (Object.keys(highlights).length > 0) {
+      html += '<div class="detail-section"><div style="font-weight:600;margin-bottom:12px">✨ Ride Highlights</div>';
+      if (highlights.speedRecord) {
+        const sr = highlights.speedRecord;
+        html += `<div style="padding:10px;background:rgba(255,165,0,.05);border-radius:6px;margin-bottom:8px;font-size:13px">⚡ Top Speed: <strong>${u_spdVal(sr.speed)}</strong> at ${sr.distKm.toFixed(1)} ${u_distUnit()} mark</div>`;
+      }
+      if (highlights.fastSection) {
+        const fs = highlights.fastSection;
+        html += `<div style="padding:10px;background:rgba(255,165,0,.05);border-radius:6px;margin-bottom:8px;font-size:13px">🔥 Speed Demon: <strong>${u_spdVal(fs.avgSpd)}</strong> avg for ${fs.distKm.toFixed(2)} ${u_distUnit()}</div>`;
+      }
+      if (highlights.steepClimb) {
+        const sc = highlights.steepClimb;
+        html += `<div style="padding:10px;background:rgba(255,165,0,.05);border-radius:6px;margin-bottom:8px;font-size:13px">💪 Steepest Climb: <strong>${sc.avgGrade.toFixed(1)}%</strong> grade over ${sc.distKm.toFixed(2)} ${u_distUnit()}</div>`;
+      }
+      if (highlights.longestDescent) {
+        const ld = highlights.longestDescent;
+        html += `<div style="padding:10px;background:rgba(255,165,0,.05);border-radius:6px;margin-bottom:8px;font-size:13px">🎢 Longest Descent: ${ld.distKm.toFixed(2)} ${u_distUnit()} dropping ${u_elevVal(ld.elevLoss)}</div>`;
+      }
+      html += '</div>';
+    }
+  }
+
   // Elevation chart
   if (r.path && r.path.length >= 4) {
     const alts = r.path.map(p => p[2]).filter(v => v != null);
@@ -2146,9 +2364,9 @@ function openRideDetail(rideId) {
     html += `<div class="detail-section"><div style="font-size:13px;color:var(--dim);font-style:italic;line-height:1.5">"${esc(r.notes)}"</div></div>`;
   }
 
-  // Media
+  // Media with photo timeline on map
   if (r.media && r.media.length) {
-    html += `<div class="detail-section"><div class="ride-media">${r.media.map((m,i) =>
+    html += `<div class="detail-section" id="media-section-${rideId}"><div class="ride-media">${r.media.map((m,i) =>
       `<div class="ride-media-item" onclick="openMediaViewer(rides.find(x=>x.id===${r.id}).media, ${i})">
         ${m.type === 'video'
           ? `<video src="${m.data}" muted></video><div class="media-play">▶</div>`
@@ -2184,8 +2402,45 @@ function openRideDetail(rideId) {
   setTimeout(() => {
     if (r.path && r.path.length > 1) {
       initCardMap(rideId, r.path);
+      // Add photo timeline markers if media exists
+      if (r.media && r.media.length > 0 && cardMaps[rideId]) {
+        addPhotoTimelineToMap(rideId, r.media, r.path);
+      }
     }
   }, 100);
+}
+
+function addPhotoTimelineToMap(rideId, media, path) {
+  const map = cardMaps[rideId];
+  if (!map || !media || !path || path.length < 2) return;
+
+  // Distribute photos evenly along the path
+  const segmentSize = Math.floor(path.length / (media.length + 1));
+  media.forEach((m, idx) => {
+    const pathIdx = Math.min(segmentSize * (idx + 1), path.length - 1);
+    const p = path[pathIdx];
+    const lat = p[0], lng = p[1];
+
+    // Create small thumbnail marker
+    const thumb = document.createElement('div');
+    thumb.style.cssText = `
+      width:32px;height:32px;border-radius:6px;overflow:hidden;
+      border:2px solid var(--orange);cursor:pointer;background:cover;
+      background-image:url('${m.data}');
+    `;
+    thumb.onclick = (e) => {
+      e.stopPropagation();
+      openMediaViewer(media, idx);
+    };
+
+    const marker = L.marker([lat, lng], {
+      icon: L.divIcon({
+        html: thumb.outerHTML,
+        iconSize: [32, 32],
+        className: 'photo-timeline-marker'
+      })
+    }).addTo(map);
+  });
 }
 
 function addDetailComment(rideId) {
@@ -2250,6 +2505,7 @@ function renderHistory(force) {
           <div class="ride-meta">
             ${fmtDate(r.ts)} · ${diffLabel(r.diff)}
             ${r.source==='garmin' ? '<span class="garmin-pip">⌚ Garmin</span>' : ''}
+            ${r.weather ? `<span style="margin-left:6px">${getWeatherIcon(r.weather.weathercode)} ${Math.round(r.weather.temp)}°</span>` : ''}
           </div>
         </div>
         <div class="ride-nums">
@@ -2290,6 +2546,167 @@ function copyCode(code, el) {
     setTimeout(() => el.style.color = '', 1200);
     toastMsg('✓ Copied!');
   }).catch(() => { const r = document.createRange(); r.selectNodeContents(el); window.getSelection().removeAllRanges(); window.getSelection().addRange(r); });
+}
+
+// ═══════════════════════════════════════════════════════
+//  BIKE GARAGE
+// ═══════════════════════════════════════════════════════
+function showAddBikeForm() {
+  const frm = $('bike-add-form');
+  if (frm) frm.style.display = '';
+}
+
+function cancelAddBike() {
+  const frm = $('bike-add-form');
+  if (frm) {
+    frm.style.display = 'none';
+    $('bike-name-inp').value = '';
+    $('bike-brand-inp').value = '';
+    $('bike-type-sel').value = '';
+  }
+}
+
+function saveBike() {
+  const name = $('bike-name-inp').value.trim();
+  const brand = $('bike-brand-inp').value.trim();
+  const type = $('bike-type-sel').value.trim();
+
+  if (!name || !brand || !type) {
+    toastMsg('Fill in all fields', false);
+    return;
+  }
+
+  if (!settings.bikes) settings.bikes = [];
+  const bike = {
+    id: Date.now(),
+    name,
+    brand,
+    type,
+    addedDate: Date.now(),
+    components: [],
+    totalKm: 0,
+    totalRides: 0,
+    totalHours: 0
+  };
+
+  settings.bikes.push(bike);
+  persistSettings();
+  cancelAddBike();
+  renderBikeGarage();
+  toastMsg('Bike added!');
+}
+
+function deleteBike(bikeId) {
+  if (!confirm('Delete this bike?')) return;
+  settings.bikes = (settings.bikes || []).filter(b => b.id !== bikeId);
+  persistSettings();
+  renderBikeGarage();
+  toastMsg('Bike deleted');
+}
+
+function renderBikeGarage() {
+  const list = $('bike-garage-list');
+  if (!list) return;
+
+  const bikes = settings.bikes || [];
+  if (!bikes.length) {
+    list.innerHTML = '<div style="font-size:13px;color:var(--dim);text-align:center;padding:12px">No bikes yet</div>';
+    return;
+  }
+
+  list.innerHTML = bikes.map(b => {
+    const stats = rides.filter(r => r.bikeId === b.id);
+    const totKm = stats.reduce((a, r) => a + r.dist, 0);
+    const totHrs = stats.reduce((a, r) => a + r.duration, 0) / 3600;
+    return `
+      <div style="padding:10px;background:rgba(255,165,0,.05);border-radius:6px;margin-bottom:8px;font-size:13px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div><strong>${esc(b.name)}</strong> · ${b.type}</div>
+          <button onclick="deleteBike(${b.id})" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px">×</button>
+        </div>
+        <div style="color:var(--dim);font-size:12px">${b.brand}</div>
+        <div style="color:var(--dim);font-size:12px;margin-top:4px">${totKm.toFixed(1)} ${u_distUnit()} · ${stats.length} ride${stats.length!==1?'s':''} · ${totHrs.toFixed(1)}h</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+//  GLOBAL HEAT MAP
+// ═══════════════════════════════════════════════════════
+let heatmapInstance = null;
+
+function initGlobalHeatMap() {
+  const container = $('heatmap-container');
+  if (!container || !rides.length || !rides.some(r => r.path && r.path.length > 1)) {
+    if (container) container.style.display = 'none';
+    return;
+  }
+
+  container.style.display = '';
+  container.innerHTML = '<div id="global-heatmap" style="width:100%;height:300px;border-radius:8px;overflow:hidden"></div>';
+
+  // Create map
+  heatmapInstance = L.map('global-heatmap').setView([20, 0], 2);
+  L.tileLayer(TILES, { maxZoom: 19 }).addTo(heatmapInstance);
+
+  // Trail frequency map
+  const trailFreq = {};
+  const bounds = L.latLngBounds();
+
+  rides.forEach(r => {
+    if (!r.path || r.path.length < 2) return;
+    const key = r.trail.toLowerCase().trim();
+    if (!trailFreq[key]) trailFreq[key] = [];
+    trailFreq[key].push(r.path);
+    r.path.forEach(p => bounds.extend([p[0], p[1]]));
+  });
+
+  // Draw paths with opacity based on frequency
+  Object.entries(trailFreq).forEach(([trail, paths]) => {
+    const freq = paths.length;
+    const opacity = Math.min(0.9, 0.3 + (freq - 1) * 0.1);
+    const color = '#ff9f43';
+
+    paths.forEach(path => {
+      const latlngs = path.map(p => [p[0], p[1]]);
+      L.polyline(latlngs, { color, weight: 3, opacity, lineCap: 'round' }).addTo(heatmapInstance);
+    });
+  });
+
+  // Fit bounds
+  if (bounds.isValid()) {
+    heatmapInstance.fitBounds(bounds, { padding: [20, 20] });
+  }
+
+  // Add legend
+  const legend = L.control({ position: 'bottomright' });
+  legend.onAdd = () => {
+    const div = L.DomUtil.create('div', 'leaflet-control leaflet-bar');
+    div.innerHTML = `<div style="background:white;padding:8px 12px;border-radius:6px;font-size:12px;box-shadow:0 2px 4px rgba(0,0,0,.2)">
+      <div style="color:#666">🔥 Heat intensity</div>
+      <div style="font-size:11px;color:#999;margin-top:4px">Lighter = rode once<br>Brighter = rode often</div>
+    </div>`;
+    return div;
+  };
+  legend.addTo(heatmapInstance);
+}
+
+// ═══════════════════════════════════════════════════════
+//  TRAIL LEADERBOARD ENHANCEMENTS
+// ═══════════════════════════════════════════════════════
+function getBoardEntriesBySort(trailKey, sortBy) {
+  const name = lb.riderName || 'You';
+  const mine = rides
+    .filter(r => r.trail.toLowerCase().trim() === trailKey)
+    .map(r => ({ riderName: name, duration: r.duration, dist: r.dist, avgSpd: r.avgSpd, maxSpd: r.maxSpd, elev: r.elev, ts: r.ts, isMe: true }));
+  const rivals = lb.rivals.filter(r => r.trail.toLowerCase().trim() === trailKey).map(r => ({ ...r, isMe: false }));
+  const all = [...mine, ...rivals];
+
+  if (sortBy === 'avgspeed') return all.sort((a, b) => b.avgSpd - a.avgSpd);
+  if (sortBy === 'elevation') return all.sort((a, b) => (b.elev || 0) - (a.elev || 0));
+  if (sortBy === 'distance') return all.sort((a, b) => b.dist - a.dist);
+  return all.sort((a, b) => a.duration - b.duration);  // fastest time (default)
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2373,11 +2790,22 @@ function renderStats() {
           <div class="chart-n">${diffs[d.k]}</div>
         </div>`).join('')}
     </div>`;
+
+  // Render heat map after rendering stats
+  setTimeout(() => initGlobalHeatMap(), 50);
 }
 
 // ═══════════════════════════════════════════════════════
 //  LEADERBOARD
 // ═══════════════════════════════════════════════════════
+let boardSortBy = 'time';
+function setSortBy(sortType) {
+  boardSortBy = sortType;
+  // Update button states
+  document.querySelectorAll('#sort-buttons .diff-btn').forEach(btn => btn.classList.remove('sel'));
+  document.querySelector(`#sort-buttons [data-sort="${sortType}"]`)?.classList.add('sel');
+}
+
 function saveRiderName() { lb.riderName = $('rider-inp').value.trim(); persistLB(); }
 
 function getAllTrails() {
@@ -2407,9 +2835,17 @@ function renderBoardView() {
 function renderBoard() {
   const key = $('trail-sel').value;
   const content = $('board-content');
-  if (!key) { content.innerHTML = `<div class="no-trail">Select a trail to see times</div>`; return; }
+  const sortBtns = $('sort-buttons');
 
-  const entries = getBoardEntries(key);
+  if (!key) {
+    content.innerHTML = `<div class="no-trail">Select a trail to see times</div>`;
+    if (sortBtns) sortBtns.style.display = 'none';
+    return;
+  }
+
+  if (sortBtns) sortBtns.style.display = 'flex';
+
+  const entries = getBoardEntriesBySort(key, boardSortBy);
   if (!entries.length) { content.innerHTML = `<div class="no-trail">No times for this trail yet</div>`; return; }
 
   const medals = ['🥇','🥈','🥉'];

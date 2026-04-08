@@ -1,5 +1,5 @@
-// SHREDMTB Service Worker — v16
-const CACHE = 'shredmtb-v16';
+// SHREDMTB Service Worker — v17
+const CACHE = 'shredmtb-v17';
 
 const CORE = [
   './index.html',
