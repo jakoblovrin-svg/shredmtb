@@ -58,6 +58,10 @@
     main { flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; padding-bottom:72px; }
     .view { display:none; }
     .view.active { display:block; }
+    @keyframes slideFromRight { from{transform:translateX(40px);opacity:0} to{transform:translateX(0);opacity:1} }
+    @keyframes slideFromLeft  { from{transform:translateX(-40px);opacity:0} to{transform:translateX(0);opacity:1} }
+    .view.slide-right { animation:slideFromRight .22s cubic-bezier(.4,0,.2,1) both; }
+    .view.slide-left  { animation:slideFromLeft  .22s cubic-bezier(.4,0,.2,1) both; }
 
     /* ── NAV ── */
     nav { position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:430px; background:#0a0a0a; border-top:1px solid var(--border); display:flex; z-index:100; }
@@ -641,8 +645,19 @@ if ('serviceWorker' in navigator) {
 let rides = JSON.parse(localStorage.getItem('mtb_rides') || '[]');
 let lb    = JSON.parse(localStorage.getItem('mtb_lb')    || '{"riderName":"","rivals":[]}');
 
-function persist()   { localStorage.setItem('mtb_rides', JSON.stringify(rides)); }
-function persistLB() { localStorage.setItem('mtb_lb',    JSON.stringify(lb)); }
+// Debounced persist — avoids blocking the main thread on every small update
+let _persistTimer = null;
+function persist() {
+  clearTimeout(_persistTimer);
+  _persistTimer = setTimeout(() => {
+    try { localStorage.setItem('mtb_rides', JSON.stringify(rides)); } catch(e) {}
+  }, 400);
+}
+function persistNow() {
+  clearTimeout(_persistTimer);
+  try { localStorage.setItem('mtb_rides', JSON.stringify(rides)); } catch(e) {}
+}
+function persistLB() { try { localStorage.setItem('mtb_lb', JSON.stringify(lb)); } catch(e) {} }
 
 // ═══════════════════════════════════════════════════════
 //  RIDE STATE
@@ -870,17 +885,34 @@ function simplifyPath(path, max) {
 // ═══════════════════════════════════════════════════════
 const TAB_ORDER = ['timer', 'history', 'stats', 'board'];
 let activeTab = 'timer';
+let _switching = false; // debounce rapid swipes
 
-function switchView(v) {
+function switchView(v, dir) {
+  // dir: 1 = slide from right (swipe left), -1 = slide from left (swipe right), 0 = no anim
+  if (_switching) return;
+  _switching = true;
+  setTimeout(() => _switching = false, 250);
+
+  const fromIdx = TAB_ORDER.indexOf(activeTab);
+  const toIdx   = TAB_ORDER.indexOf(v);
+  if (dir == null) dir = toIdx > fromIdx ? 1 : toIdx < fromIdx ? -1 : 0;
+
   activeTab = v;
-  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(el => {
+    el.classList.remove('active', 'slide-right', 'slide-left');
+  });
   document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
-  $('view-'+v).classList.add('active');
-  $('nav-'+v).classList.add('active');
-  if (v==='history') renderHistory();
-  if (v==='stats')   renderStats();
-  if (v==='board')   renderBoardView();
-  if (v==='timer' && rideMap) setTimeout(() => rideMap.invalidateSize(), 50);
+
+  const newView = $('view-' + v);
+  newView.classList.add('active');
+  if (dir === 1)  newView.classList.add('slide-right');
+  if (dir === -1) newView.classList.add('slide-left');
+
+  $('nav-' + v).classList.add('active');
+  if (v === 'history') renderHistory();
+  if (v === 'stats')   renderStats();
+  if (v === 'board')   renderBoardView();
+  if (v === 'timer' && rideMap) setTimeout(() => rideMap.invalidateSize(), 50);
 }
 
 // ── Swipe between tabs ──
@@ -898,17 +930,10 @@ function switchView(v) {
     const dx = e.changedTouches[0].clientX - sx;
     const dy = e.changedTouches[0].clientY - sy;
     const dt = Date.now() - sTime;
-
-    // Must be: horizontal > 60px, more horizontal than vertical, fast enough (< 400ms)
     if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.8 && dt < 400) {
-      const curIdx = TAB_ORDER.indexOf(activeTab);
-      if (dx < 0 && curIdx < TAB_ORDER.length - 1) {
-        // Swipe left → next tab
-        switchView(TAB_ORDER[curIdx + 1]);
-      } else if (dx > 0 && curIdx > 0) {
-        // Swipe right → previous tab
-        switchView(TAB_ORDER[curIdx - 1]);
-      }
+      const cur = TAB_ORDER.indexOf(activeTab);
+      if (dx < 0 && cur < TAB_ORDER.length - 1) switchView(TAB_ORDER[cur + 1],  1);
+      else if (dx > 0 && cur > 0)                switchView(TAB_ORDER[cur - 1], -1);
     }
   });
 })();
@@ -1013,6 +1038,8 @@ function populateSaveForm(isImport) {
   document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('sel'));
   pendingMedia = [];
   renderMediaGrid();
+  const saveBtn = document.querySelector('#s-save .btn-primary');
+  if (saveBtn) saveBtn.disabled = false;
 }
 
 function pickDiff(btn) {
@@ -1024,12 +1051,20 @@ function pickDiff(btn) {
 //  SAVE RIDE
 // ═══════════════════════════════════════════════════════
 function saveRide() {
+  // Guard against double-tap: disable button immediately
+  const saveBtn = document.querySelector('#s-save .btn-primary');
+  if (saveBtn && saveBtn.disabled) return;
+  if (saveBtn) saveBtn.disabled = true;
+
   const trail = $('inp-trail').value.trim();
   if (!trail) {
     $('inp-trail').classList.add('err'); $('inp-trail').focus();
-    setTimeout(() => $('inp-trail').classList.remove('err'), 1600); return;
+    setTimeout(() => { $('inp-trail').classList.remove('err'); if (saveBtn) saveBtn.disabled = false; }, 1600);
+    return;
   }
   const isImport = !!pendingImport;
+  // Guard: if somehow called with no data, bail
+  if (!isImport && !rideData) { showState('idle'); return; }
   const src = isImport ? pendingImport : rideData;
   const dur = isImport ? pendingImport.duration : timerSec;
   const avgSpd = dur > 0 ? +((src.dist / dur) * 3600).toFixed(1) : 0;
@@ -1053,48 +1088,49 @@ function saveRide() {
   };
 
   rides.unshift(ride);
-  persist();
+  persistNow();
   pendingImport = null; timerSec = 0; rideData = null; chosenDiff = null; gpsPath = [];
-  pendingMedia = [];
+  pendingMedia = []; savedPath = [];
+  _historyRenderKey = null; // force re-render on next visit
   showState('idle');
   toastMsg('✓ Ride saved!');
-  switchView('history');
+  switchView('history', 1);
 }
 
 // ═══════════════════════════════════════════════════════
 //  UI UPDATE TICK  (runs every second while riding)
 // ═══════════════════════════════════════════════════════
+// Helper: only write to DOM if value actually changed (avoids needless reflows)
+function setTxt(el, val) { if (el && el.textContent !== val) el.textContent = val; }
+
 function uiStep() {
   if (!rideData) return;
   const spd = rideData.spd;
 
-  $('l-dist').textContent = rideData.dist.toFixed(2);
-  $('l-elev').textContent = Math.round(rideData.elev);
-  $('l-spd') .textContent = spd.toFixed(1);
-  $('l-max') .textContent = rideData.maxSpd.toFixed(1);
+  setTxt($('l-dist'), rideData.dist.toFixed(2));
+  setTxt($('l-elev'), String(Math.round(rideData.elev)));
+  setTxt($('l-spd'),  spd.toFixed(1));
+  setTxt($('l-max'),  rideData.maxSpd.toFixed(1));
+  setTxt($('l-alt'),  rideData.altitude != null ? String(rideData.altitude) : '—');
 
-  const altEl = $('l-alt');
-  if (altEl) altEl.textContent = rideData.altitude != null ? rideData.altitude : '—';
-
-  // Avg speed = total distance ÷ elapsed riding time
-  const avgEl = $('l-avg');
-  if (avgEl) avgEl.textContent = timerSec > 5 && rideData.dist > 0
+  // Avg speed
+  const avgVal = timerSec > 5 && rideData.dist > 0
     ? ((rideData.dist / timerSec) * 3600).toFixed(1) : '0.0';
+  setTxt($('l-avg'), avgVal);
 
   // Max-speed % bar
   const maxS = rideData.maxSpd > 0 ? rideData.maxSpd : 1;
   const pct  = rideData.maxSpd > 0 ? Math.min(100, (spd / maxS) * 100) : 0;
-  $('spd-fill').style.width = pct + '%';
-  $('spd-pct').textContent  = spd.toFixed(1) + ' km/h\u00a0·\u00a0' + Math.round(pct) + '% of max';
-  const maxLbl = $('spd-max-lbl');
-  if (maxLbl) maxLbl.textContent = 'MAX ' + rideData.maxSpd.toFixed(1) + ' km/h';
+  const fillEl = $('spd-fill');
+  const newW = Math.round(pct) + '%';
+  if (fillEl && fillEl.style.width !== newW) fillEl.style.width = newW;
+  setTxt($('spd-pct'),     spd.toFixed(1) + ' km/h\u00a0·\u00a0' + Math.round(pct) + '% of max');
+  setTxt($('spd-max-lbl'), 'MAX ' + rideData.maxSpd.toFixed(1) + ' km/h');
 
-  // Source label — GPS status only, no "Simulated" ever
-  $('spd-src').textContent = gpsActive ? '📡 GPS' : '⏳ Waiting for GPS…';
-  const distSrc = $('dist-src');
-  if (distSrc) distSrc.textContent = gpsActive ? '📡' : '';
-  const elevSrc = $('elev-src');
-  if (elevSrc) elevSrc.textContent = gpsHasAlt ? '📡' : '';
+  // Source labels
+  setTxt($('spd-src'),  gpsActive ? '📡 GPS' : '⏳ Waiting for GPS…');
+  setTxt($('dist-src'), gpsActive ? '📡' : '');
+  setTxt($('elev-src'), gpsHasAlt ? '📡' : '');
 
   // Duration cell (optional)
   const durEl = $('l-dur2');
@@ -1165,15 +1201,35 @@ function togglePause() {
 function handleMediaFiles(e) {
   const files = [...e.target.files];
   e.target.value = '';
-  for (const file of files) {
-    if (pendingMedia.length >= 6) { toastMsg('Max 6 files', false); break; }
-    const reader = new FileReader();
-    reader.onload = () => {
-      pendingMedia.push({ data: reader.result, type: file.type.startsWith('video') ? 'video' : 'image' });
-      renderMediaGrid();
-    };
-    reader.readAsDataURL(file);
-  }
+  const remaining = 6 - pendingMedia.length;
+  if (!remaining) { toastMsg('Max 6 files', false); return; }
+  files.slice(0, remaining).forEach(file => {
+    if (file.type.startsWith('video')) {
+      // Videos: store as-is but warn if large
+      if (file.size > 30 * 1024 * 1024) { toastMsg('Video too large (max 30 MB)', false); return; }
+      const reader = new FileReader();
+      reader.onload = () => { pendingMedia.push({ data: reader.result, type: 'video' }); renderMediaGrid(); };
+      reader.readAsDataURL(file);
+    } else {
+      // Images: compress to max 1024px wide/tall, 0.75 quality before storing
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const MAX = 1024;
+        let w = img.width, h = img.height;
+        if (w > MAX || h > MAX) { const r = MAX / Math.max(w, h); w = Math.round(w*r); h = Math.round(h*r); }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL('image/jpeg', 0.75);
+        pendingMedia.push({ data: compressed, type: 'image' });
+        renderMediaGrid();
+      };
+      img.src = url;
+    }
+  });
+  if (files.length > remaining) toastMsg(`Max 6 files — kept first ${remaining}`, false);
 }
 
 function renderMediaGrid() {
@@ -1508,7 +1564,13 @@ function parseTCX(xml) {
 // ═══════════════════════════════════════════════════════
 //  HISTORY
 // ═══════════════════════════════════════════════════════
-function renderHistory() {
+let _historyRenderKey = null;
+function renderHistory(force) {
+  // Skip re-render if rides haven't changed (avoids rebuilding huge DOM on every tab switch)
+  const key = rides.length + '|' + (rides[0] ? rides[0].id : '');
+  if (!force && key === _historyRenderKey) return;
+  _historyRenderKey = key;
+
   const list = $('ride-list');
   $('h-count').textContent = rides.length + (rides.length===1?' ride':' rides');
 
