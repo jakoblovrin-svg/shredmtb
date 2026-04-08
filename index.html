@@ -36,6 +36,19 @@
       --gold:     #f5a623;
     }
 
+    body.light-theme {
+      --bg:       #f0f0f0;
+      --bg-card:  #ffffff;
+      --bg-surf:  #e8e8e8;
+      --bg-input: #f8f8f8;
+      --text:     #111111;
+      --dim:      #666;
+      --muted:    #ccc;
+      --border:   #ddd;
+    }
+    body.light-theme header, body.light-theme nav { background:#fff; }
+    body.light-theme .timer-hero { background:linear-gradient(160deg,#f5f5f5 0%,#ebebeb 100%); }
+
     *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
     html, body { height:100%; }
     body { background:var(--bg); color:var(--text); font-family:'Barlow',sans-serif; display:flex; justify-content:center; min-height:100dvh; }
@@ -186,8 +199,10 @@
     .detail-v.heart { color:var(--heart); }
 
     .ride-notes-txt { font-size:13px; color:var(--dim); line-height:1.5; padding:10px 0 0; border-top:1px solid var(--border); font-style:italic; }
-    .card-map-wrap { margin-top:12px; border-radius:7px; overflow:hidden; height:150px; border:1px solid var(--border); }
+    .card-map-wrap { margin-top:12px; border-radius:7px; overflow:hidden; height:150px; border:1px solid var(--border); position:relative; }
     .card-map-el { width:100%; height:100%; }
+    .heatmap-toggle { background:rgba(20,20,20,.8); color:#fff; border-radius:5px; width:28px; height:28px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:14px; user-select:none; transition:background .2s; border:1px solid rgba(255,255,255,.15); }
+    .heat-legend { position:absolute; bottom:6px; left:6px; background:rgba(10,10,10,.75); border-radius:5px; padding:3px 7px; font-size:10px; color:#ddd; z-index:9999; pointer-events:none; display:flex; gap:5px; align-items:center; }
     .card-actions { display:flex; gap:8px; margin-top:12px; }
     .del-btn { flex:1; padding:8px; background:transparent; border:1px solid rgba(217,53,53,.2); border-radius:6px; color:rgba(217,53,53,.65); font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:11px; letter-spacing:1px; text-transform:uppercase; cursor:pointer; transition:all .15s; }
     .del-btn:hover { background:rgba(217,53,53,.09); color:var(--red); }
@@ -326,6 +341,30 @@
     .grid-toggle.on { background:var(--orange); }
     .grid-toggle::after { content:''; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; transition:transform .2s; }
     .grid-toggle.on::after { transform:translateX(18px); }
+
+    /* Elevation chart */
+    .elev-chart { margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+    .elev-chart-ttl { font-family:'Barlow Condensed',sans-serif; font-weight:600; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--dim); margin-bottom:6px; }
+    .elev-chart svg { width:100%; display:block; border-radius:6px; overflow:hidden; }
+
+    /* Comments */
+    .comment-form { margin-top:10px; padding-top:10px; border-top:1px solid var(--border); display:flex; gap:6px; }
+    .comment-inp { flex:1; background:var(--bg-input); border:1px solid var(--border); border-radius:6px; padding:8px 10px; color:var(--text); font-family:'Barlow',sans-serif; font-size:14px; outline:none; }
+    .comment-inp:focus { border-color:var(--orange); }
+    .comment-send { padding:8px 12px; background:var(--orange); border:none; border-radius:6px; color:#fff; font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:12px; cursor:pointer; letter-spacing:1px; }
+    .comment-list { margin-top:8px; }
+    .comment-item { padding:6px 0; border-bottom:1px solid var(--border); font-size:13px; color:var(--dim); line-height:1.4; }
+    .comment-item:last-child { border-bottom:none; }
+    .comment-ts { font-size:10px; color:var(--muted); margin-right:6px; font-family:'Barlow Condensed',sans-serif; letter-spacing:1px; }
+
+    /* HR Zones */
+    .hr-zones { margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
+    .hr-zone-ttl { font-family:'Barlow Condensed',sans-serif; font-weight:600; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--dim); margin-bottom:8px; }
+    .hr-zone-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+    .hr-zone-lbl { font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:11px; width:50px; }
+    .hr-zone-bar { flex:1; height:7px; background:var(--bg-surf); border-radius:4px; overflow:hidden; }
+    .hr-zone-fill { height:100%; border-radius:4px; }
+    .hr-zone-pct { font-family:'Barlow Condensed',sans-serif; font-size:11px; color:var(--dim); width:30px; text-align:right; }
 
     /* Leaflet overrides */
     .leaflet-control-attribution { display:none !important; }
@@ -466,6 +505,21 @@
             <input type="text" class="form-inp" id="inp-trail" placeholder="e.g. Eagle Rock Flow Trail" maxlength="60">
           </div>
           <div class="form-grp">
+            <label class="form-lbl">Ride Type</label>
+            <div style="display:flex;flex-wrap:wrap;gap:5px" id="cat-row">
+              <button class="diff-btn sel" data-cat="enduro"    onclick="pickCat(this)">🏔 Enduro</button>
+              <button class="diff-btn"     data-cat="downhill"  onclick="pickCat(this)">⬇ DH</button>
+              <button class="diff-btn"     data-cat="xc"        onclick="pickCat(this)">🔄 XC</button>
+              <button class="diff-btn"     data-cat="flow"      onclick="pickCat(this)">〰 Flow</button>
+              <button class="diff-btn"     data-cat="jump"      onclick="pickCat(this)">🚀 Jump</button>
+              <button class="diff-btn"     data-cat="park"      onclick="pickCat(this)">🏟 Park</button>
+            </div>
+          </div>
+          <div class="form-grp">
+            <label class="form-lbl">Bike</label>
+            <input type="text" class="form-inp" id="inp-bike" placeholder="e.g. Trek Slash" maxlength="40">
+          </div>
+          <div class="form-grp">
             <label class="form-lbl">Difficulty</label>
             <div class="diff-row">
               <button class="diff-btn" data-d="green"  onclick="pickDiff(this)"><div class="diff-dot"></div>Green</button>
@@ -587,6 +641,51 @@
       </div>
     </div>
 
+    <!-- ══════════ SETTINGS VIEW ══════════ -->
+    <div id="view-settings" class="view">
+      <div class="view-hdr"><div class="view-ttl">⚙ Settings</div></div>
+      <div style="padding:0 12px 24px">
+
+        <!-- Units -->
+        <div class="s-card" style="margin-bottom:10px">
+          <div class="s-lbl" style="margin-bottom:12px">Units</div>
+          <div style="display:flex;gap:8px">
+            <button class="diff-btn" id="unit-metric" onclick="setUnits('metric')" style="flex:1;padding:10px">Metric<br><small style="opacity:.6">km / m</small></button>
+            <button class="diff-btn" id="unit-imperial" onclick="setUnits('imperial')" style="flex:1;padding:10px">Imperial<br><small style="opacity:.6">mi / ft</small></button>
+          </div>
+        </div>
+
+        <!-- Theme -->
+        <div class="s-card" style="margin-bottom:10px">
+          <div class="s-lbl" style="margin-bottom:12px">Theme</div>
+          <div style="display:flex;gap:8px">
+            <button class="diff-btn" id="theme-dark" onclick="setTheme('dark')" style="flex:1;padding:10px">🌙 Dark</button>
+            <button class="diff-btn" id="theme-light" onclick="setTheme('light')" style="flex:1;padding:10px">☀️ Light</button>
+          </div>
+        </div>
+
+        <!-- Max HR -->
+        <div class="s-card" style="margin-bottom:10px">
+          <div class="s-lbl" style="margin-bottom:8px">Max Heart Rate (for HR zones)</div>
+          <input type="number" class="form-inp" id="inp-maxhr" min="100" max="220" placeholder="190" value="" oninput="settings.maxHR=+this.value||190;persistSettings()">
+        </div>
+
+        <!-- Default bike -->
+        <div class="s-card" style="margin-bottom:10px">
+          <div class="s-lbl" style="margin-bottom:8px">Default Bike</div>
+          <input type="text" class="form-inp" id="inp-defbike" placeholder="e.g. Trek Slash" maxlength="40" oninput="settings.bike=this.value;persistSettings()">
+        </div>
+
+        <!-- Data management -->
+        <div class="s-card">
+          <div class="s-lbl" style="margin-bottom:12px">Data</div>
+          <button class="btn btn-outline" style="margin-bottom:8px" onclick="exportRides()">⬇ Export all rides (JSON)</button>
+          <button class="btn btn-danger" onclick="if(confirm('Delete ALL rides?')){rides=[];persist();_historyRenderKey=null;toastMsg('All rides deleted');}">⚠ Delete all rides</button>
+        </div>
+
+      </div>
+    </div>
+
   </main>
 
   <nav>
@@ -601,6 +700,9 @@
     </button>
     <button id="nav-board" onclick="switchView('board')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/></svg>Board
+    </button>
+    <button id="nav-settings" onclick="switchView('settings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings
     </button>
   </nav>
 
@@ -640,6 +742,20 @@ if ('serviceWorker' in navigator) {
 // ═══════════════════════════════════════════════════════
 let rides = JSON.parse(localStorage.getItem('mtb_rides') || '[]');
 let lb    = JSON.parse(localStorage.getItem('mtb_lb')    || '{"riderName":"","rivals":[]}');
+let settings = JSON.parse(localStorage.getItem('mtb_settings') || '{}');
+settings = { units: 'metric', theme: 'dark', maxHR: 190, bike: '', ...settings };
+function persistSettings() { localStorage.setItem('mtb_settings', JSON.stringify(settings)); }
+
+// Unit helper functions
+function u_dist(km)  { return settings.units==='imperial' ? (km*0.621371).toFixed(2)+' mi' : km.toFixed(2)+' km'; }
+function u_spd(kph)  { return settings.units==='imperial' ? (kph*0.621371).toFixed(1)+' mph' : kph.toFixed(1)+' km/h'; }
+function u_elev(m)   { return settings.units==='imperial' ? Math.round(m*3.28084)+" ft" : m+" m"; }
+function u_distVal(km){ return settings.units==='imperial' ? (km*0.621371).toFixed(2) : km.toFixed(2); }
+function u_spdVal(kph){ return settings.units==='imperial' ? (kph*0.621371).toFixed(1) : kph.toFixed(1); }
+function u_elevVal(m) { return settings.units==='imperial' ? String(Math.round(m*3.28084)) : String(Math.round(m)); }
+function u_distUnit() { return settings.units==='imperial' ? 'mi' : 'km'; }
+function u_spdUnit()  { return settings.units==='imperial' ? 'mph' : 'km/h'; }
+function u_elevUnit() { return settings.units==='imperial' ? 'ft' : 'm'; }
 
 // Debounced persist — avoids blocking the main thread on every small update
 let _persistTimer = null;
@@ -659,7 +775,7 @@ function persistLB() { try { localStorage.setItem('mtb_lb', JSON.stringify(lb));
 //  RIDE STATE
 // ═══════════════════════════════════════════════════════
 let timerSec   = 0, timerTick = null, uiTick = null;
-let rideData   = null, chosenDiff = null;
+let rideData   = null, chosenDiff = null, chosenCat = 'enduro';
 let pendingImport = null;
 let isPaused   = false;
 let pendingMedia = []; // base64 data URLs for photos/videos attached during save
@@ -705,7 +821,7 @@ function onGPSPos(pos) {
   }
 
   // Always track path and map position, but only accumulate stats when riding
-  gpsPath.push([lat, lng]);
+  gpsPath.push([lat, lng, rideData.altitude != null ? rideData.altitude : null, rideData.spd || 0]);
   updateRideMap(lat, lng);
 
   // Don't accumulate stats while paused
@@ -830,18 +946,109 @@ function resetRideMap() {
   if (posMkr) { rideMap.removeLayer(posMkr); posMkr = null; }
 }
 
+function speedColor(kph) {
+  // Blue → Cyan → Green → Yellow → Orange → Red
+  if (kph <= 0)  return '#4d9de0';  // stationary: blue
+  if (kph < 8)   return '#3dcc6e';  // slow: green
+  if (kph < 20)  return '#f5c542';  // medium: yellow
+  if (kph < 35)  return '#ff6200';  // fast: orange
+  return '#e84040';                   // very fast: red
+}
+
+function drawSpeedHeatmap(m, path) {
+  const hasSpeeds = path.some(p => p[3] > 0);
+  if (!hasSpeeds) {
+    return L.polyline(path.map(p => [p[0], p[1]]), { color: '#ff6200', weight: 4 }).addTo(m);
+  }
+  // Draw colored segments based on speed
+  const layers = [];
+  for (let i = 0; i < path.length - 1; i++) {
+    const spd = (path[i][3] + (path[i+1][3] || 0)) / 2;
+    layers.push(L.polyline([[path[i][0], path[i][1]], [path[i+1][0], path[i+1][1]]], {
+      color: speedColor(spd), weight: 4, opacity: 0.9
+    }).addTo(m));
+  }
+  return layers;
+}
+
 function initCardMap(id, path) {
   if (cardMaps[id]) { cardMaps[id].invalidateSize(); return; }
   const el = $('cmap-' + id);
   if (!el || !path.length) return;
   const m = L.map(el, { zoomControl: false, attributionControl: false, dragging: true });
   L.tileLayer(TILES, { maxZoom: 19 }).addTo(m);
-  const poly = L.polyline(path, { color: '#ff6200', weight: 3 }).addTo(m);
-  m.fitBounds(poly.getBounds(), { padding: [12, 12] });
   const mkIco = (color) => L.divIcon({ html: `<div style="width:10px;height:10px;background:${color};border:2px solid #fff;border-radius:50%"></div>`, iconSize:[10,10], iconAnchor:[5,5], className:'' });
+  const hasSpeeds = path.some(p => p[3] > 0);
+
+  // Start with normal route view
+  let heatmapOn = false;
+  let routeLayers = drawSpeedHeatmap(m, path.map(p => [p[0], p[1], p[2] || null, 0])); // plain orange
+  let heatLayers = null;
+
+  // Fit bounds
+  const latLngs = path.map(p => [p[0], p[1]]);
+  const poly = L.polyline(latLngs, { color: 'transparent', weight: 0 }).addTo(m);
+  m.fitBounds(poly.getBounds(), { padding: [12, 12] });
   L.marker(path[0], { icon: mkIco('#3dcc6e') }).addTo(m);
   L.marker(path[path.length-1], { icon: mkIco('#ff6200') }).addTo(m);
+
+  // Add heatmap toggle button (only if speed data exists)
+  if (hasSpeeds) {
+    const toggleBtn = L.control({ position: 'topright' });
+    toggleBtn.onAdd = () => {
+      const div = L.DomUtil.create('div', 'heatmap-toggle');
+      div.title = 'Toggle speed heatmap';
+      div.innerHTML = '🌡️';
+      L.DomEvent.on(div, 'click', (e) => {
+        L.DomEvent.stopPropagation(e);
+        heatmapOn = !heatmapOn;
+        div.style.background = heatmapOn ? 'rgba(255,98,0,0.85)' : 'rgba(20,20,20,0.8)';
+        if (heatmapOn) {
+          // Remove plain route, add heatmap
+          if (Array.isArray(routeLayers)) routeLayers.forEach(l => m.removeLayer(l));
+          else if (routeLayers) m.removeLayer(routeLayers);
+          if (!heatLayers) heatLayers = drawSpeedHeatmap(m, path);
+          else if (Array.isArray(heatLayers)) heatLayers.forEach(l => m.addLayer(l));
+          else m.addLayer(heatLayers);
+          // Show legend
+          showHeatLegend(id);
+        } else {
+          // Remove heatmap, restore plain route
+          if (Array.isArray(heatLayers)) heatLayers.forEach(l => m.removeLayer(l));
+          else if (heatLayers) m.removeLayer(heatLayers);
+          routeLayers = drawSpeedHeatmap(m, path.map(p => [p[0], p[1], p[2] || null, 0]));
+          hideHeatLegend(id);
+        }
+      });
+      return div;
+    };
+    toggleBtn.addTo(m);
+  }
+
   cardMaps[id] = m;
+}
+
+function showHeatLegend(id) {
+  const el = $('cmap-' + id);
+  if (!el) return;
+  let leg = el.querySelector('.heat-legend');
+  if (!leg) {
+    leg = document.createElement('div');
+    leg.className = 'heat-legend';
+    leg.innerHTML = `<span style="color:#4d9de0">■</span> 0
+      <span style="color:#3dcc6e">■</span> 8
+      <span style="color:#f5c542">■</span> 20
+      <span style="color:#ff6200">■</span> 35
+      <span style="color:#e84040">■</span> 35+ km/h`;
+    el.appendChild(leg);
+  }
+  leg.style.display = '';
+}
+
+function hideHeatLegend(id) {
+  const el = $('cmap-' + id);
+  const leg = el && el.querySelector('.heat-legend');
+  if (leg) leg.style.display = 'none';
 }
 
 // ═══════════════════════════════════════════════════════
@@ -890,6 +1097,7 @@ function switchView(v) {
   if (v === 'history') renderHistory();
   if (v === 'stats')   renderStats();
   if (v === 'board')   renderBoardView();
+  if (v === 'settings') applySettings();
   if (v === 'timer' && rideMap) setTimeout(() => rideMap.invalidateSize(), 50);
 }
 
@@ -992,6 +1200,9 @@ function populateSaveForm(isImport) {
   $('garmin-tag').style.display = isImport ? '' : 'none';
   chosenDiff = null;
   document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('sel'));
+  chosenCat = 'enduro';
+  document.querySelectorAll('[data-cat]').forEach(b => b.classList.toggle('sel', b.dataset.cat==='enduro'));
+  const bikeInp = $('inp-bike'); if (bikeInp) bikeInp.value = settings.bike || '';
   pendingMedia = [];
   isSaving = false;
   renderMediaGrid();
@@ -1000,6 +1211,11 @@ function populateSaveForm(isImport) {
 function pickDiff(btn) {
   document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('sel'));
   btn.classList.add('sel'); chosenDiff = btn.dataset.d;
+}
+
+function pickCat(btn) {
+  document.querySelectorAll('[data-cat]').forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel'); chosenCat = btn.dataset.cat;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1020,6 +1236,16 @@ function saveRide() {
   if (!isImport && !rideData) { showState('idle'); return; } // already cleared
   isSaving = true; // lock — released only in populateSaveForm / discardRide
 
+  // Deduplication: warn if very similar ride exists (same trail, within 60s duration)
+  const dup = rides.find(rx => rx.trail.toLowerCase() === trail.toLowerCase() &&
+    Math.abs((rx.ts || 0) - Date.now()) < 5 * 60000 &&
+    Math.abs(rx.duration - (isImport ? pendingImport.duration : timerSec)) < 60);
+  if (dup) {
+    if (!confirm('A very similar ride was already saved recently. Save anyway?')) {
+      isSaving = false; return;
+    }
+  }
+
   const src = isImport ? pendingImport : rideData;
   const dur = isImport ? pendingImport.duration : timerSec;
   const avgSpd = dur > 0 ? +((src.dist / dur) * 3600).toFixed(1) : 0;
@@ -1029,6 +1255,8 @@ function saveRide() {
     ts:      isImport ? pendingImport.ts : Date.now(),
     trail,
     diff:    chosenDiff || 'blue',
+    category: chosenCat || 'enduro',
+    bike: ($('inp-bike') ? $('inp-bike').value.trim() : '') || settings.bike || '',
     duration: dur,
     dist:    +parseFloat(src.dist).toFixed(2),
     elev:    Math.round(src.elev),
@@ -1126,6 +1354,14 @@ function togglePause() {
     // Keep GPS watch running so we have current position on resume,
     // but onGPSPos will skip accumulation while isPaused=true.
 
+    // Start a pause clock display
+    window._pauseStart = Date.now();
+    window._pauseDisp = setInterval(() => {
+      const secs = Math.round((Date.now() - window._pauseStart) / 1000);
+      const rlbl2 = $('ride-label');
+      if (rlbl2) rlbl2.textContent = 'Paused · ' + fmtTime(secs);
+    }, 1000);
+
     btn.classList.add('resuming');
     // Swap to play icon
     $('pause-icon').innerHTML = '<polygon points="5 3 19 12 5 21 5 3"/>';
@@ -1135,6 +1371,8 @@ function togglePause() {
     rlbl.textContent = 'Paused';
   } else {
     // ── RESUME ──
+    clearInterval(window._pauseDisp);
+    window._pauseDisp = null;
     // Reset lastGPSTime so first position after resume doesn't give a wrong speed spike
     lastGPSTime = null;
 
@@ -1521,6 +1759,138 @@ function parseTCX(xml) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  SETTINGS
+// ═══════════════════════════════════════════════════════
+function applySettings() {
+  // Theme
+  document.body.classList.toggle('light-theme', settings.theme === 'light');
+  // Unit buttons
+  const um = $('unit-metric'), ui = $('unit-imperial');
+  if (um) um.classList.toggle('sel', settings.units === 'metric');
+  if (ui) ui.classList.toggle('sel', settings.units === 'imperial');
+  // Theme buttons
+  const td = $('theme-dark'), tl = $('theme-light');
+  if (td) td.classList.toggle('sel', settings.theme === 'dark');
+  if (tl) tl.classList.toggle('sel', settings.theme === 'light');
+  // Inputs
+  const mhr = $('inp-maxhr'); if (mhr) mhr.value = settings.maxHR || 190;
+  const db  = $('inp-defbike'); if (db) db.value = settings.bike || '';
+}
+
+function setUnits(u) { settings.units = u; persistSettings(); applySettings(); renderHistory(true); renderStats(); }
+function setTheme(t) { settings.theme = t; persistSettings(); applySettings(); }
+
+function exportRides() {
+  const blob = new Blob([JSON.stringify(rides, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'shredmtb-rides-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ═══════════════════════════════════════════════════════
+//  ELEVATION CHART
+// ═══════════════════════════════════════════════════════
+function buildElevChart(altPath) {
+  if (!altPath || altPath.length < 4) return '';
+  const W = 340, H = 64, PAD = 4;
+  const vals = altPath.filter(v => v != null && !isNaN(v));
+  if (vals.length < 4) return '';
+  const mn = Math.min(...vals), mx = Math.max(...vals);
+  const range = mx - mn || 1;
+  const pts = vals.map((v, i) => {
+    const x = PAD + (i / (vals.length - 1)) * (W - PAD * 2);
+    const y = H - PAD - ((v - mn) / range) * (H - PAD * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const polyPts = pts.join(' ');
+  // Filled area: add bottom corners
+  const first = pts[0], last = pts[pts.length - 1];
+  const fx = parseFloat(first), lx = parseFloat(last);
+  const areaPts = polyPts + ` ${lx.toFixed(1)},${H - PAD} ${fx.toFixed(1)},${H - PAD}`;
+  return `<div class="elev-chart">
+    <div class="elev-chart-ttl">Elevation Profile · ${mn}m – ${mx}m asl</div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:64px;background:var(--bg-surf);border-radius:6px">
+      <defs>
+        <linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--orange)" stop-opacity=".5"/>
+          <stop offset="100%" stop-color="var(--orange)" stop-opacity=".05"/>
+        </linearGradient>
+      </defs>
+      <polygon points="${areaPts}" fill="url(#eg)"/>
+      <polyline points="${polyPts}" fill="none" stroke="var(--orange)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    </svg>
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════
+//  COMMENTS AND HR ZONES
+// ═══════════════════════════════════════════════════════
+function addComment(rideId) {
+  const inp = $('cmnt-inp-' + rideId);
+  if (!inp || !inp.value.trim()) return;
+  const r = rides.find(x => x.id === rideId);
+  if (!r) return;
+  if (!r.comments) r.comments = [];
+  r.comments.push({ text: inp.value.trim(), ts: Date.now() });
+  inp.value = '';
+  persist();
+  _historyRenderKey = null;
+  // Refresh just the comment list in DOM without full re-render
+  const listEl = $('cmnt-list-' + rideId);
+  if (listEl) listEl.innerHTML = renderCommentList(r.comments);
+}
+
+function renderCommentList(comments) {
+  if (!comments || !comments.length) return '';
+  return comments.map(c =>
+    `<div class="comment-item"><span class="comment-ts">${fmtDateShort(c.ts)}</span>${esc(c.text)}</div>`
+  ).join('');
+}
+
+function buildHRZones(avgHr, maxHr, maxHRSetting) {
+  if (!avgHr) return '';
+  const zones = [
+    { name:'Z1', pct:50, color:'#4d9de0', label:'Recovery' },
+    { name:'Z2', pct:60, color:'#3dcc6e', label:'Aerobic' },
+    { name:'Z3', pct:70, color:'#f5a623', label:'Tempo' },
+    { name:'Z4', pct:80, color:'#ff6200', label:'Threshold' },
+    { name:'Z5', pct:90, color:'#e84040', label:'Max' },
+  ];
+  const mhr = maxHRSetting || 190;
+  // Estimate time in zone from avg HR (simplified: assume normal distribution around avg)
+  // Use a simple approximation based on the avg HR position
+  const avgPct = (avgHr / mhr) * 100;
+  const spread = maxHr ? ((maxHr - avgHr) / mhr * 100) / 2 : 15;
+  let zoneRows = '';
+  let anyData = false;
+  for (let i = 0; i < zones.length; i++) {
+    const lo = zones[i].pct;
+    const hi = i < zones.length - 1 ? zones[i+1].pct : 100;
+    // Fraction of ride time estimated in this zone
+    const center = (lo + hi) / 2;
+    const dist = Math.abs(avgPct - center);
+    const raw = Math.max(0, 1 - dist / (spread + 15));
+    const zoneData = zones.map((_, j) => {
+      const lo2 = zones[j].pct, hi2 = j < zones.length - 1 ? zones[j+1].pct : 100;
+      const c2 = (lo2 + hi2) / 2;
+      return Math.max(0, 1 - Math.abs(avgPct - c2) / (spread + 15));
+    });
+    const total = zoneData.reduce((a,b)=>a+b, 0) || 1;
+    const pct = Math.round((raw / total) * 100);
+    if (pct > 0) anyData = true;
+    zoneRows += `<div class="hr-zone-row">
+      <div class="hr-zone-lbl" style="color:${zones[i].color}">${zones[i].name}</div>
+      <div class="hr-zone-bar"><div class="hr-zone-fill" style="width:${pct}%;background:${zones[i].color}"></div></div>
+      <div class="hr-zone-pct">${pct}%</div>
+    </div>`;
+  }
+  if (!anyData) return '';
+  return `<div class="hr-zones"><div class="hr-zone-ttl">❤️ HR Zones (est. from avg ${avgHr} bpm)</div>${zoneRows}</div>`;
+}
+
+// ═══════════════════════════════════════════════════════
 //  HISTORY
 // ═══════════════════════════════════════════════════════
 let _historyRenderKey = null;
@@ -1579,6 +1949,13 @@ function renderHistory(force) {
           })()}
         </div>
         ${r.notes ? `<div class="ride-notes-txt">"${esc(r.notes)}"</div>` : ''}
+        ${buildHRZones(r.avgHr, r.maxHr, settings.maxHR)}
+        ${(()=>{
+          // Extract altitude profile from path[i][2]
+          if (!r.path || r.path.length < 4) return '';
+          const alts = r.path.map(p => p[2]).filter(v => v != null);
+          return buildElevChart(alts);
+        })()}
         ${r.media && r.media.length ? `<div class="ride-media">${r.media.map((m,i) =>
           `<div class="ride-media-item" onclick="openMediaViewer(rides.find(x=>x.id===${r.id}).media, ${i})">
             ${m.type === 'video'
@@ -1590,6 +1967,11 @@ function renderHistory(force) {
         <div class="card-actions">
           <button class="share-btn" onclick="showShare(${r.id},event)">📤 Share</button>
           <button class="del-btn"   onclick="delRide(${r.id},event)">Delete</button>
+        </div>
+        <div class="comment-list" id="cmnt-list-${r.id}">${renderCommentList(r.comments)}</div>
+        <div class="comment-form">
+          <input class="comment-inp" id="cmnt-inp-${r.id}" placeholder="Add a note…" maxlength="200" onkeydown="if(event.key==='Enter')addComment(${r.id})">
+          <button class="comment-send" onclick="addComment(${r.id})">Add</button>
         </div>
         <div id="sc-${r.id}" style="display:none"></div>
       </div>
@@ -1663,6 +2045,24 @@ function renderStats() {
     {k:'dblack',label:'◆◆ Blk',color:'#ffffff'}
   ];
 
+  // Personal Records
+  const longestRide = rides.reduce((a,b) => b.duration > a.duration ? b : a, rides[0]);
+  const fastestRide = rides.reduce((a,b) => b.maxSpd > a.maxSpd ? b : a, rides[0]);
+  const mostElevRide = rides.reduce((a,b) => b.elev > a.elev ? b : a, rides[0]);
+  const longestDist  = rides.reduce((a,b) => b.dist > a.dist ? b : a, rides[0]);
+
+  // Streak
+  const today = new Date(); today.setHours(0,0,0,0);
+  const rideDays = [...new Set(rides.map(r => { const d=new Date(r.ts); d.setHours(0,0,0,0); return d.getTime(); }))].sort((a,b)=>b-a);
+  let streak = 0;
+  let check = today.getTime();
+  for (const day of rideDays) {
+    if (day === check) { streak++; check -= 86400000; }
+    else if (day < check) break;
+  }
+  // Also compute rides this month
+  const thisMonth = rides.filter(r => { const d=new Date(r.ts); return d.getMonth()===today.getMonth() && d.getFullYear()===today.getFullYear(); }).length;
+
   wrap.innerHTML = `
     <div class="stats-grid">
       <div class="s-card accent"><div class="s-lbl">Total Rides</div><div class="s-val">${n}</div><div class="s-unit">rides</div></div>
@@ -1672,6 +2072,22 @@ function renderStats() {
       <div class="s-card accent"><div class="s-lbl">Top Speed</div><div class="s-val">${topSpd.toFixed(1)}</div><div class="s-unit">km/h</div></div>
       <div class="s-card"><div class="s-lbl">Avg Speed</div><div class="s-val">${avgSpd}</div><div class="s-unit">km/h</div></div>
       ${avgHR ? `<div class="s-card span2"><div class="s-lbl">Avg Heart Rate</div><div class="s-val" style="color:var(--heart);font-size:30px">♥ ${avgHR}</div><div class="s-unit">bpm across ${hrRides.length} Garmin ride${hrRides.length>1?'s':''}</div></div>` : ''}
+    </div>
+    <div class="chart-section" style="margin-top:8px">
+      <div class="chart-ttl">🏅 Personal Records</div>
+      <div class="stats-grid" style="margin-bottom:0">
+        <div class="s-card accent"><div class="s-lbl">Longest Ride</div><div class="s-val" style="font-size:22px">${fmtShort(longestRide.duration)}</div><div class="s-unit">${esc(longestRide.trail)}</div></div>
+        <div class="s-card"><div class="s-lbl">Top Speed Ever</div><div class="s-val">${fastestRide.maxSpd}</div><div class="s-unit">km/h · ${esc(fastestRide.trail)}</div></div>
+        <div class="s-card"><div class="s-lbl">Most Elevation</div><div class="s-val" style="font-size:22px">${mostElevRide.elev}</div><div class="s-unit">m · ${esc(mostElevRide.trail)}</div></div>
+        <div class="s-card"><div class="s-lbl">Farthest Ride</div><div class="s-val">${longestDist.dist}</div><div class="s-unit">km · ${esc(longestDist.trail)}</div></div>
+      </div>
+    </div>
+    <div class="chart-section" style="margin-top:8px">
+      <div class="chart-ttl">🔥 Activity</div>
+      <div class="stats-grid" style="margin-bottom:0">
+        <div class="s-card accent"><div class="s-lbl">Current Streak</div><div class="s-val">${streak}</div><div class="s-unit">day${streak!==1?'s':''}</div></div>
+        <div class="s-card"><div class="s-lbl">This Month</div><div class="s-val">${thisMonth}</div><div class="s-unit">ride${thisMonth!==1?'s':''}</div></div>
+      </div>
     </div>
     <div class="chart-section">
       <div class="chart-ttl">Difficulty Breakdown</div>
@@ -1800,6 +2216,7 @@ function dismissIOSPrompt() {
 showState('idle');
 setGPS('off', 'GPS');
 buildLiveGrid();
+applySettings();
 checkInstallPrompt();
 </script>
 </body>
