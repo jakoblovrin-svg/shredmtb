@@ -159,6 +159,8 @@
     .diff-btn[data-d="red"].sel    { border-color:var(--red);    background:rgba(232,64,64,.12);   color:var(--red); }
     .diff-btn[data-d="black"].sel  { border-color:#888;          background:rgba(136,136,136,.1);  color:#aaa; }
     .diff-btn[data-d="dblack"].sel { border-color:#fff;          background:rgba(255,255,255,.1);  color:#fff; }
+    /* Generic .sel style for category/unit/theme buttons */
+    .diff-btn.sel { border-color:var(--orange); background:rgba(255,98,0,.12); color:var(--orange); }
 
     /* ── HISTORY VIEW ── */
     .view-hdr { padding:20px 18px 12px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
@@ -212,6 +214,35 @@
     .share-code-lbl { font-family:'Barlow Condensed',sans-serif; font-size:10px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:var(--dim); margin-bottom:6px; }
     .share-code-txt { font-family:monospace; font-size:11px; color:var(--orange); word-break:break-all; line-height:1.5; cursor:pointer; user-select:all; }
     .share-copy-hint { font-family:'Barlow Condensed',sans-serif; font-size:10px; color:var(--dim); margin-top:5px; letter-spacing:1px; }
+
+    /* Speed + Elevation Chart */
+    .speed-elev-chart { margin-bottom:12px; }
+    .speed-elev-ttl { font-family:'Barlow Condensed',sans-serif; font-weight:600; font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:var(--dim); margin-bottom:8px; }
+    .speed-elev-legend { margin-top:6px; display:flex; gap:16px; font-family:'Barlow Condensed',sans-serif; font-weight:600; font-size:11px; color:var(--dim); letter-spacing:.5px; }
+
+    /* Ride detail view */
+    #view-detail { position:absolute; top:0; left:0; right:0; bottom:0; z-index:200; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+    .detail-view-hdr { padding:16px 18px; display:flex; align-items:center; gap:12px; border-bottom:1px solid var(--border); background:var(--bg); }
+    .detail-back-btn { width:36px; height:36px; display:flex; align-items:center; justify-content:center; background:transparent; border:1px solid var(--border); border-radius:6px; color:var(--text); cursor:pointer; }
+    .detail-back-btn:active { background:var(--bg-surf); }
+    .detail-title-block { flex:1; min-width:0; }
+    .detail-trail-name { font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:18px; line-height:1.1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .detail-meta { font-size:12px; color:var(--dim); margin-top:3px; }
+    .detail-badge { display:inline-block; margin-left:8px; padding:2px 8px; background:var(--bg-surf); border-radius:4px; font-size:11px; }
+    .detail-map-wrap { height:250px; margin-bottom:16px; border-radius:7px; overflow:hidden; border:1px solid var(--border); }
+    .detail-map-el { width:100%; height:100%; }
+    .detail-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; padding:16px 18px; }
+    .detail-item { text-align:center; }
+    .detail-stat-v { font-family:'Barlow Condensed',sans-serif; font-weight:900; font-size:22px; color:var(--orange); }
+    .detail-stat-v.heart { color:var(--heart); }
+    .detail-stat-l { font-family:'Barlow Condensed',sans-serif; font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:var(--dim); margin-top:3px; }
+    .detail-section { padding:16px 18px; border-top:1px solid var(--border); }
+    .detail-section-ttl { font-family:'Barlow Condensed',sans-serif; font-weight:600; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--dim); margin-bottom:10px; }
+    .detail-action-row { display:flex; gap:8px; padding:16px 18px; border-top:1px solid var(--border); }
+    .detail-action-btn { flex:1; padding:10px 12px; background:transparent; border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:12px; letter-spacing:1px; text-transform:uppercase; cursor:pointer; transition:all .15s; }
+    .detail-action-btn:hover { background:var(--bg-surf); }
+    .detail-action-btn.danger { border-color:rgba(217,53,53,.3); color:var(--red); }
+    .detail-action-btn.danger:hover { background:rgba(217,53,53,.08); }
 
     /* Empty */
     .empty { text-align:center; padding:52px 24px; }
@@ -641,6 +672,20 @@
       </div>
     </div>
 
+    <!-- ══════════ RIDE DETAIL VIEW ══════════ -->
+    <div id="view-detail" class="view">
+      <div class="detail-view-hdr">
+        <button class="detail-back-btn" onclick="switchView('history')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        </button>
+        <div class="detail-title-block">
+          <div class="detail-trail-name" id="detail-trail-name">—</div>
+          <div class="detail-meta" id="detail-meta">—</div>
+        </div>
+      </div>
+      <div id="detail-content" style="padding-bottom:24px"></div>
+    </div>
+
     <!-- ══════════ SETTINGS VIEW ══════════ -->
     <div id="view-settings" class="view">
       <div class="view-hdr"><div class="view-ttl">⚙ Settings</div></div>
@@ -978,19 +1023,21 @@ function initCardMap(id, path) {
   const m = L.map(el, { zoomControl: false, attributionControl: false, dragging: true });
   L.tileLayer(TILES, { maxZoom: 19 }).addTo(m);
   const mkIco = (color) => L.divIcon({ html: `<div style="width:10px;height:10px;background:${color};border:2px solid #fff;border-radius:50%"></div>`, iconSize:[10,10], iconAnchor:[5,5], className:'' });
-  const hasSpeeds = path.some(p => p[3] > 0);
+  // Normalize path to ensure [lat, lng, alt, spd] format (treat missing speed as 0)
+  const normalizedPath = path.map(p => [p[0], p[1], p[2] || null, p[3] || 0]);
+  const hasSpeeds = normalizedPath.some(p => p[3] > 0);
 
   // Start with normal route view
   let heatmapOn = false;
-  let routeLayers = drawSpeedHeatmap(m, path.map(p => [p[0], p[1], p[2] || null, 0])); // plain orange
+  let routeLayers = drawSpeedHeatmap(m, normalizedPath.map(p => [p[0], p[1], p[2] || null, 0])); // plain orange
   let heatLayers = null;
 
   // Fit bounds
-  const latLngs = path.map(p => [p[0], p[1]]);
+  const latLngs = normalizedPath.map(p => [p[0], p[1]]);
   const poly = L.polyline(latLngs, { color: 'transparent', weight: 0 }).addTo(m);
   m.fitBounds(poly.getBounds(), { padding: [12, 12] });
-  L.marker(path[0], { icon: mkIco('#3dcc6e') }).addTo(m);
-  L.marker(path[path.length-1], { icon: mkIco('#ff6200') }).addTo(m);
+  L.marker(normalizedPath[0], { icon: mkIco('#3dcc6e') }).addTo(m);
+  L.marker(normalizedPath[normalizedPath.length-1], { icon: mkIco('#ff6200') }).addTo(m);
 
   // Add heatmap toggle button (only if speed data exists)
   if (hasSpeeds) {
@@ -1007,7 +1054,7 @@ function initCardMap(id, path) {
           // Remove plain route, add heatmap
           if (Array.isArray(routeLayers)) routeLayers.forEach(l => m.removeLayer(l));
           else if (routeLayers) m.removeLayer(routeLayers);
-          if (!heatLayers) heatLayers = drawSpeedHeatmap(m, path);
+          if (!heatLayers) heatLayers = drawSpeedHeatmap(m, normalizedPath);
           else if (Array.isArray(heatLayers)) heatLayers.forEach(l => m.addLayer(l));
           else m.addLayer(heatLayers);
           // Show legend
@@ -1016,7 +1063,7 @@ function initCardMap(id, path) {
           // Remove heatmap, restore plain route
           if (Array.isArray(heatLayers)) heatLayers.forEach(l => m.removeLayer(l));
           else if (heatLayers) m.removeLayer(heatLayers);
-          routeLayers = drawSpeedHeatmap(m, path.map(p => [p[0], p[1], p[2] || null, 0]));
+          routeLayers = drawSpeedHeatmap(m, normalizedPath.map(p => [p[0], p[1], p[2] || null, 0]));
           hideHeatLegend(id);
         }
       });
@@ -1093,7 +1140,10 @@ function switchView(v) {
   document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
   $('view-' + v).classList.add('active');
-  $('nav-'  + v).classList.add('active');
+  // Don't activate nav button for detail view
+  if (v !== 'detail') {
+    $('nav-'  + v).classList.add('active');
+  }
   if (v === 'history') renderHistory();
   if (v === 'stats')   renderStats();
   if (v === 'board')   renderBoardView();
@@ -1209,7 +1259,7 @@ function populateSaveForm(isImport) {
 }
 
 function pickDiff(btn) {
-  document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('sel'));
+  document.querySelectorAll('.diff-btn[data-d]').forEach(b => b.classList.remove('sel'));
   btn.classList.add('sel'); chosenDiff = btn.dataset.d;
 }
 
@@ -1790,6 +1840,109 @@ function exportRides() {
 }
 
 // ═══════════════════════════════════════════════════════
+//  SPEED + ELEVATION OVER DISTANCE CHART
+// ═══════════════════════════════════════════════════════
+function buildSpeedElevChart(path) {
+  if (!path || path.length < 4) return '';
+
+  // Build distance array using haversine
+  const W = 340, H = 120, PAD = 20;
+  let cumDist = 0;
+  const points = [];
+
+  for (let i = 0; i < path.length; i++) {
+    const p = path[i];
+    const lat = p[0], lng = p[1], alt = p[2], spd = p[3] || 0;
+
+    if (i > 0) {
+      const prevP = path[i - 1];
+      const d = haversine(prevP[0], prevP[1], lat, lng);
+      cumDist += d;
+    }
+
+    points.push({ dist: cumDist, alt: alt != null ? alt : null, spd: spd });
+  }
+
+  // Extract valid alt and spd values
+  const alts = points.map(p => p.alt).filter(v => v != null);
+  const spds = points.map(p => p.spd).filter(v => v != null && v > 0);
+
+  if (alts.length < 4 && spds.length < 4) return '';
+  if (points.length < 2) return '';
+
+  const maxDist = cumDist;
+  const minAlt = alts.length ? Math.min(...alts) : 0;
+  const maxAlt = alts.length ? Math.max(...alts) : minAlt + 100;
+  const maxSpd = spds.length ? Math.max(...spds) : 50;
+  const altRange = (maxAlt - minAlt) || 100;
+
+  // Build SVG path for elevation (left Y-axis) and speed (right Y-axis)
+  let elevPts = [], spdPts = [];
+
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const x = PAD + (p.dist / maxDist) * (W - PAD * 2);
+
+    // Elevation on left Y-axis (0 at bottom = H-PAD, increases upward)
+    if (p.alt != null) {
+      const y = (H - PAD) - ((p.alt - minAlt) / altRange) * (H - PAD * 2);
+      elevPts.push([x, y]);
+    }
+
+    // Speed on right Y-axis (0 at bottom = H-PAD, increases upward)
+    if (p.spd > 0) {
+      const y = (H - PAD) - (p.spd / maxSpd) * (H - PAD * 2);
+      spdPts.push([x, y]);
+    }
+  }
+
+  // Build area fills (need to close polygon)
+  const buildAreaPoly = (pts) => {
+    if (pts.length < 2) return '';
+    let poly = pts.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+    // Close polygon at bottom right then bottom left
+    const lastX = pts[pts.length - 1][0], firstX = pts[0][0];
+    poly += ` ${lastX.toFixed(1)},${(H - PAD).toFixed(1)} ${firstX.toFixed(1)},${(H - PAD).toFixed(1)}`;
+    return poly;
+  };
+
+  const elevPoly = buildAreaPoly(elevPts);
+  const spdPoly = buildAreaPoly(spdPts);
+
+  // Build polyline (stroke only, no fill for line)
+  const buildLine = (pts) => pts.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const elevLine = buildLine(elevPts);
+  const spdLine = buildLine(spdPts);
+
+  return `<div class="speed-elev-chart">
+    <div class="speed-elev-ttl">Speed & Elevation vs Distance</div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:120px;background:var(--bg-surf);border-radius:6px">
+      <defs>
+        <linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#3dcc6e" stop-opacity=".4"/>
+          <stop offset="100%" stop-color="#3dcc6e" stop-opacity=".05"/>
+        </linearGradient>
+        <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#ff6200" stop-opacity=".4"/>
+          <stop offset="100%" stop-color="#ff6200" stop-opacity=".05"/>
+        </linearGradient>
+      </defs>
+      ${elevPoly ? `<polygon points="${elevPoly}" fill="url(#eg)"/>` : ''}
+      ${spdPoly ? `<polygon points="${spdPoly}" fill="url(#sg)"/>` : ''}
+      ${elevLine ? `<polyline points="${elevLine}" fill="none" stroke="#3dcc6e" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+      ${spdLine ? `<polyline points="${spdLine}" fill="none" stroke="#ff6200" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+      <!-- X-axis labels -->
+      <text x="3" y="${H - 2}" font-size="10" fill="var(--dim)" font-family="Barlow Condensed">0 km</text>
+      <text x="${W - 35}" y="${H - 2}" font-size="10" fill="var(--dim)" font-family="Barlow Condensed">${maxDist.toFixed(1)} km</text>
+    </svg>
+    <div class="speed-elev-legend">
+      <div><span style="color:#3dcc6e">■</span> Elevation (m)</div>
+      <div><span style="color:#ff6200">■</span> Speed (km/h)</div>
+    </div>
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════
 //  ELEVATION CHART
 // ═══════════════════════════════════════════════════════
 function buildElevChart(altPath) {
@@ -1891,6 +2044,141 @@ function buildHRZones(avgHr, maxHr, maxHRSetting) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  RIDE DETAIL VIEW
+// ═══════════════════════════════════════════════════════
+function openRideDetail(rideId) {
+  const r = rides.find(x => x.id === rideId);
+  if (!r) return;
+
+  // Populate detail view
+  $('detail-trail-name').textContent = r.trail;
+  $('detail-meta').innerHTML = `${fmtDate(r.ts)} · <span class="detail-badge" style="background:${diffColor(r.diff)}60;color:${diffColor(r.diff)}">${diffLabel(r.diff)}</span>`;
+
+  // Build content
+  let html = '';
+
+  // Map
+  if (r.path && r.path.length > 1) {
+    html += `<div class="detail-map-wrap"><div class="detail-map-el" id="cmap-${rideId}"></div></div>`;
+  }
+
+  // Stats grid
+  const paceMin = r.dist > 0 ? (r.duration / 60) / r.dist : 0;
+  const pm = Math.floor(paceMin), ps = Math.round((paceMin - pm) * 60);
+  const paceStr = r.dist > 0 ? `${pm}:${String(ps).padStart(2,'0')}` : '—';
+  const kcal = Math.round((r.duration / 3600) * 500);
+
+  html += `<div class="detail-grid">
+    <div class="detail-item"><div class="detail-stat-v">${r.dist}</div><div class="detail-stat-l">km</div></div>
+    <div class="detail-item"><div class="detail-stat-v">${r.elev}m</div><div class="detail-stat-l">Elev</div></div>
+    <div class="detail-item"><div class="detail-stat-v">${fmtShort(r.duration)}</div><div class="detail-stat-l">Time</div></div>
+    <div class="detail-item"><div class="detail-stat-v">${r.maxSpd}</div><div class="detail-stat-l">Max km/h</div></div>
+    <div class="detail-item"><div class="detail-stat-v">${r.avgSpd}</div><div class="detail-stat-l">Avg km/h</div></div>
+    ${r.avgHr ? `<div class="detail-item"><div class="detail-stat-v heart">♥ ${r.avgHr}</div><div class="detail-stat-l">Avg HR</div></div>` : ''}
+    ${r.maxHr ? `<div class="detail-item"><div class="detail-stat-v">${r.maxHr}</div><div class="detail-stat-l">Max HR</div></div>` : ''}
+    <div class="detail-item"><div class="detail-stat-v" style="font-size:18px">${paceStr}</div><div class="detail-stat-l">min/km</div></div>
+    <div class="detail-item"><div class="detail-stat-v">~${kcal}</div><div class="detail-stat-l">kcal</div></div>
+  </div>`;
+
+  // Elevation chart
+  if (r.path && r.path.length >= 4) {
+    const alts = r.path.map(p => p[2]).filter(v => v != null);
+    if (alts.length >= 4) {
+      html += `<div class="detail-section">${buildElevChart(alts)}</div>`;
+    }
+  }
+
+  // Speed + elevation over distance chart
+  if (r.path && r.path.length >= 4) {
+    const chart = buildSpeedElevChart(r.path);
+    if (chart) html += `<div class="detail-section">${chart}</div>`;
+  }
+
+  // HR zones
+  if (r.avgHr) {
+    html += `<div class="detail-section">${buildHRZones(r.avgHr, r.maxHr, settings.maxHR)}</div>`;
+  }
+
+  // Notes
+  if (r.notes) {
+    html += `<div class="detail-section"><div style="font-size:13px;color:var(--dim);font-style:italic;line-height:1.5">"${esc(r.notes)}"</div></div>`;
+  }
+
+  // Media
+  if (r.media && r.media.length) {
+    html += `<div class="detail-section"><div class="ride-media">${r.media.map((m,i) =>
+      `<div class="ride-media-item" onclick="openMediaViewer(rides.find(x=>x.id===${r.id}).media, ${i})">
+        ${m.type === 'video'
+          ? `<video src="${m.data}" muted></video><div class="media-play">▶</div>`
+          : `<img src="${m.data}">`}
+      </div>`
+    ).join('')}</div></div>`;
+  }
+
+  // Comments
+  html += `<div class="detail-section">
+    <div class="detail-section-ttl">Comments</div>
+    <div class="comment-list" id="detail-cmnt-list-${rideId}">${renderCommentList(r.comments)}</div>
+    <div class="comment-form">
+      <input class="comment-inp" id="detail-cmnt-inp-${rideId}" placeholder="Add a note…" maxlength="200" onkeydown="if(event.key==='Enter')addDetailComment(${rideId})">
+      <button class="comment-send" onclick="addDetailComment(${rideId})">Add</button>
+    </div>
+  </div>`;
+
+  // Actions
+  html += `<div class="detail-action-row">
+    <button class="detail-action-btn" onclick="showDetailShare(${rideId})">📤 Share</button>
+    <button class="detail-action-btn danger" onclick="delDetailRide(${rideId})">Delete</button>
+  </div>`;
+
+  $('detail-content').innerHTML = html;
+
+  switchView('detail');
+
+  // Init map after view is active and rendered
+  setTimeout(() => {
+    if (r.path && r.path.length > 1) {
+      initCardMap(rideId, r.path);
+    }
+  }, 100);
+}
+
+function addDetailComment(rideId) {
+  const inp = $('detail-cmnt-inp-' + rideId);
+  if (!inp || !inp.value.trim()) return;
+  const r = rides.find(x => x.id === rideId);
+  if (!r) return;
+  if (!r.comments) r.comments = [];
+  r.comments.push({ text: inp.value.trim(), ts: Date.now() });
+  inp.value = '';
+  persist();
+  const listEl = $('detail-cmnt-list-' + rideId);
+  if (listEl) listEl.innerHTML = renderCommentList(r.comments);
+}
+
+function showDetailShare(rideId) {
+  const r = rides.find(r => r.id === rideId);
+  if (!r) return;
+  const code = encodeRide(r);
+  const msg = `SHREDMTB Share: ${r.trail} - ${r.dist}km, ${fmtShort(r.duration)}\n\n${code}`;
+  if (navigator.share) {
+    navigator.share({ title: 'SHREDMTB Ride', text: msg }).catch(() => {});
+  } else {
+    navigator.clipboard.writeText(code).then(() => toastMsg('✓ Code copied!')).catch(() => {});
+  }
+}
+
+function delDetailRide(rideId) {
+  if (!confirm('Delete this ride?')) return;
+  rides = rides.filter(r => r.id !== rideId);
+  persist();
+  delete cardMaps['temp-detail-map-' + rideId];
+  _historyRenderKey = null;
+  switchView('history');
+  toastMsg('Ride deleted');
+}
+
+// ═══════════════════════════════════════════════════════
 //  HISTORY
 // ═══════════════════════════════════════════════════════
 let _historyRenderKey = null;
@@ -1910,7 +2198,7 @@ function renderHistory(force) {
 
   list.innerHTML = rides.map(r => `
     <div class="ride-card" id="rc-${r.id}">
-      <div class="ride-card-hdr" onclick="toggleCard(${r.id})">
+      <div class="ride-card-hdr" onclick="openRideDetail(${r.id})">
         <div class="diff-pip" style="background:${diffColor(r.diff)}"></div>
         <div class="ride-info">
           <div class="ride-name">${esc(r.trail)}</div>
@@ -1925,67 +2213,9 @@ function renderHistory(force) {
         </div>
         <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
-      <div class="ride-body">
-        <div class="detail-grid">
-          <div class="detail-item"><div class="detail-v">${r.dist}</div><div class="detail-l">km</div></div>
-          <div class="detail-item"><div class="detail-v">${r.elev}m</div><div class="detail-l">Elev Gain</div></div>
-          <div class="detail-item"><div class="detail-v">${fmtShort(r.duration)}</div><div class="detail-l">Time</div></div>
-          <div class="detail-item"><div class="detail-v">${r.maxSpd}</div><div class="detail-l">Max km/h</div></div>
-          <div class="detail-item"><div class="detail-v">${r.avgSpd}</div><div class="detail-l">Avg km/h</div></div>
-          ${r.avgHr
-            ? `<div class="detail-item"><div class="detail-v heart">♥ ${r.avgHr}</div><div class="detail-l">Avg HR</div></div>`
-            : `<div class="detail-item"><div class="detail-v" style="color:${diffColor(r.diff)}">${diffLabel(r.diff).split(' ')[0]}</div><div class="detail-l">Grade</div></div>`
-          }
-          ${r.maxHr ? `<div class="detail-item"><div class="detail-v heart">${r.maxHr}</div><div class="detail-l">Max HR</div></div>` : ''}
-          ${(()=>{
-            // Pace: min per km (only meaningful if dist > 0)
-            const paceMin = r.dist > 0 ? (r.duration / 60) / r.dist : 0;
-            const pm = Math.floor(paceMin), ps = Math.round((paceMin - pm) * 60);
-            const paceStr = r.dist > 0 ? `${pm}:${String(ps).padStart(2,'0')}` : '—';
-            // Calories: rough MTB estimate ~500 kcal/hr × duration
-            const kcal = Math.round((r.duration / 3600) * 500);
-            return `<div class="detail-item"><div class="detail-v" style="font-size:18px">${paceStr}</div><div class="detail-l">min/km</div></div>
-                    <div class="detail-item"><div class="detail-v">~${kcal}</div><div class="detail-l">kcal</div></div>`;
-          })()}
-        </div>
-        ${r.notes ? `<div class="ride-notes-txt">"${esc(r.notes)}"</div>` : ''}
-        ${buildHRZones(r.avgHr, r.maxHr, settings.maxHR)}
-        ${(()=>{
-          // Extract altitude profile from path[i][2]
-          if (!r.path || r.path.length < 4) return '';
-          const alts = r.path.map(p => p[2]).filter(v => v != null);
-          return buildElevChart(alts);
-        })()}
-        ${r.media && r.media.length ? `<div class="ride-media">${r.media.map((m,i) =>
-          `<div class="ride-media-item" onclick="openMediaViewer(rides.find(x=>x.id===${r.id}).media, ${i})">
-            ${m.type === 'video'
-              ? `<video src="${m.data}" muted></video><div class="media-play">▶</div>`
-              : `<img src="${m.data}">`}
-          </div>`
-        ).join('')}</div>` : ''}
-        ${r.path && r.path.length > 1 ? `<div class="card-map-wrap"><div class="card-map-el" id="cmap-${r.id}"></div></div>` : ''}
-        <div class="card-actions">
-          <button class="share-btn" onclick="showShare(${r.id},event)">📤 Share</button>
-          <button class="del-btn"   onclick="delRide(${r.id},event)">Delete</button>
-        </div>
-        <div class="comment-list" id="cmnt-list-${r.id}">${renderCommentList(r.comments)}</div>
-        <div class="comment-form">
-          <input class="comment-inp" id="cmnt-inp-${r.id}" placeholder="Add a note…" maxlength="200" onkeydown="if(event.key==='Enter')addComment(${r.id})">
-          <button class="comment-send" onclick="addComment(${r.id})">Add</button>
-        </div>
-        <div id="sc-${r.id}" style="display:none"></div>
-      </div>
     </div>`).join('');
 }
 
-function toggleCard(id) {
-  const card = $('rc-'+id);
-  card.classList.toggle('open');
-  if (card.classList.contains('open')) {
-    const r = rides.find(r => r.id === id);
-    if (r?.path?.length > 1) setTimeout(() => initCardMap(id, r.path), 60);
-  }
-}
 
 function delRide(id, e) {
   e.stopPropagation();
