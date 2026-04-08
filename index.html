@@ -397,6 +397,32 @@
     .hr-zone-fill { height:100%; border-radius:4px; }
     .hr-zone-pct { font-family:'Barlow Condensed',sans-serif; font-size:11px; color:var(--dim); width:30px; text-align:right; }
 
+    /* Segment Analysis */
+    .segment-analysis { margin-top:8px; }
+    .segment-ttl { font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:12px; letter-spacing:1px; color:var(--dim); text-transform:uppercase; margin-bottom:8px; }
+    .segment-chart { display:flex; height:8px; gap:1px; background:var(--border); border-radius:4px; overflow:hidden; margin-bottom:12px; }
+    .segment-bar { transition:opacity .2s; cursor:pointer; }
+    .segment-bar:hover { opacity:0.8; }
+    .segment-row { padding:10px; border:1px solid var(--border); border-radius:4px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; }
+    #segment-details { margin-top:8px; }
+
+    /* Comparison */
+    .comparison-view { background:var(--bg-card); border-radius:8px; padding:16px; }
+    .comparison-header { text-align:center; margin-bottom:16px; }
+    .comparison-title { font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:16px; margin-bottom:10px; }
+    .comparison-riders { display:flex; justify-content:space-around; }
+    .rider-col { flex:1; }
+    .rider-name { font-weight:700; font-size:14px; }
+    .comparison-stats { display:grid; gap:8px; }
+    .comp-stat { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; padding:10px; background:var(--bg-surf); border-radius:4px; align-items:center; }
+    .comp-label { font-size:11px; color:var(--dim); grid-column:1/-1; font-weight:700; text-transform:uppercase; }
+    .comp-your, .comp-their { font-size:14px; font-weight:600; }
+    .comp-winner { font-size:12px; color:var(--gold); font-weight:700; text-align:right; }
+
+    .compare-option { display:block; width:100%; padding:8px; margin-bottom:6px; background:var(--bg-surf); border:1px solid var(--border); border-radius:4px; color:var(--text); cursor:pointer; font-size:13px; text-align:left; }
+    .compare-option:hover { background:var(--bg-input); }
+    .compare-menu { padding:12px; }
+
     /* Leaflet overrides */
     .leaflet-control-attribution { display:none !important; }
     .leaflet-control-zoom a { background:#1a1a1a !important; color:#ccc !important; border-color:#333 !important; }
@@ -1082,11 +1108,17 @@ function showHeatLegend(id) {
   if (!leg) {
     leg = document.createElement('div');
     leg.className = 'heat-legend';
-    leg.innerHTML = `<span style="color:#4d9de0">■</span> 0
-      <span style="color:#3dcc6e">■</span> 8
-      <span style="color:#f5c542">■</span> 20
-      <span style="color:#ff6200">■</span> 35
-      <span style="color:#e84040">■</span> 35+ km/h`;
+    const unit = u_spdUnit();
+    const v0 = 0, v8 = 8, v20 = 20, v35 = 35;
+    const v0i = settings.units === 'imperial' ? Math.round(v0 * 0.621371) : v0;
+    const v8i = settings.units === 'imperial' ? Math.round(v8 * 0.621371) : v8;
+    const v20i = settings.units === 'imperial' ? Math.round(v20 * 0.621371) : v20;
+    const v35i = settings.units === 'imperial' ? Math.round(v35 * 0.621371) : v35;
+    leg.innerHTML = `<span style="color:#4d9de0">■</span> ${v0i}
+      <span style="color:#3dcc6e">■</span> ${v8i}
+      <span style="color:#f5c542">■</span> ${v20i}
+      <span style="color:#ff6200">■</span> ${v35i}
+      <span style="color:#e84040">■</span> ${v35i}+ ${unit}`;
     el.appendChild(leg);
   }
   leg.style.display = '';
@@ -1242,8 +1274,8 @@ function discardRide() {
 function populateSaveForm(isImport) {
   const src = isImport ? pendingImport : { duration: timerSec, dist: rideData.dist, elev: rideData.elev };
   $('rp-time').textContent = fmtShort(src.duration);
-  $('rp-dist').textContent = src.dist.toFixed ? src.dist.toFixed(2) : src.dist;
-  $('rp-elev').textContent = Math.round(src.elev);
+  $('rp-dist').textContent = u_distVal(src.dist.toFixed ? src.dist : parseFloat(src.dist));
+  $('rp-elev').textContent = u_elevVal(src.elev);
   $('inp-trail').value = isImport ? (pendingImport.trailName || '') : '';
   $('inp-notes').value = isImport && pendingImport.avgHr ? `Avg HR: ${pendingImport.avgHr} bpm` : '';
   $('inp-trail').classList.remove('err');
@@ -1344,15 +1376,15 @@ function uiStep() {
   if (!rideData) return;
   const spd = rideData.spd;
 
-  setTxt($('l-dist'), rideData.dist.toFixed(2));
-  setTxt($('l-elev'), String(Math.round(rideData.elev)));
-  setTxt($('l-spd'),  spd.toFixed(1));
-  setTxt($('l-max'),  rideData.maxSpd.toFixed(1));
-  setTxt($('l-alt'),  rideData.altitude != null ? String(rideData.altitude) : '—');
+  setTxt($('l-dist'), u_distVal(rideData.dist));
+  setTxt($('l-elev'), u_elevVal(rideData.elev));
+  setTxt($('l-spd'),  u_spdVal(spd));
+  setTxt($('l-max'),  u_spdVal(rideData.maxSpd));
+  setTxt($('l-alt'),  rideData.altitude != null ? u_elevVal(rideData.altitude) : '—');
 
   // Avg speed
   const avgVal = timerSec > 5 && rideData.dist > 0
-    ? ((rideData.dist / timerSec) * 3600).toFixed(1) : '0.0';
+    ? u_spdVal((rideData.dist / timerSec) * 3600) : '0.0';
   setTxt($('l-avg'), avgVal);
 
   // Max-speed % bar
@@ -1361,8 +1393,8 @@ function uiStep() {
   const fillEl = $('spd-fill');
   const newW = Math.round(pct) + '%';
   if (fillEl && fillEl.style.width !== newW) fillEl.style.width = newW;
-  setTxt($('spd-pct'),     spd.toFixed(1) + ' km/h\u00a0·\u00a0' + Math.round(pct) + '% of max');
-  setTxt($('spd-max-lbl'), 'MAX ' + rideData.maxSpd.toFixed(1) + ' km/h');
+  setTxt($('spd-pct'),     u_spdVal(spd) + '\u00a0·\u00a0' + Math.round(pct) + '% of max');
+  setTxt($('spd-max-lbl'), 'MAX ' + u_spdVal(rideData.maxSpd));
 
   // Source labels
   setTxt($('spd-src'),  gpsActive ? '📡 GPS' : '⏳ Waiting for GPS…');
@@ -1373,11 +1405,12 @@ function uiStep() {
   const durEl = $('l-dur2');
   if (durEl) durEl.textContent = fmtShort(timerSec);
 
-  // Pace cell (optional) — min/km
+  // Pace cell (optional) — min/km or min/mi
   const paceEl = $('l-pace');
   if (paceEl) {
     if (rideData.dist > 0.01 && timerSec > 5) {
-      const pMin = (timerSec / 60) / rideData.dist;
+      const distVal = settings.units === 'imperial' ? rideData.dist * 0.621371 : rideData.dist;
+      const pMin = (timerSec / 60) / distVal;
       const pm = Math.floor(pMin), ps = Math.round((pMin - pm) * 60);
       paceEl.textContent = `${pm}:${String(ps).padStart(2,'0')}`;
     } else {
@@ -1559,14 +1592,14 @@ function openMediaViewer(mediaArr, startIdx) {
 //  CUSTOMIZABLE LIVE GRID
 // ═══════════════════════════════════════════════════════
 const GRID_CELLS = [
-  { key: 'dist',    label: 'Distance',  id: 'l-dist', unit: 'km',   hi: false },
-  { key: 'elev',    label: 'Elev Gain', id: 'l-elev', unit: 'm',    hi: false },
-  { key: 'spd',     label: 'Speed',     id: 'l-spd',  unit: 'km/h', hi: true  },
-  { key: 'maxSpd',  label: 'Max Speed', id: 'l-max',  unit: 'km/h', hi: false },
-  { key: 'alt',     label: 'Altitude',  id: 'l-alt',  unit: 'm asl',hi: false },
-  { key: 'avgSpd',  label: 'Avg Speed', id: 'l-avg',  unit: 'km/h', hi: false },
-  { key: 'timer',   label: 'Duration',  id: 'l-dur2', unit: '',     hi: false },
-  { key: 'pace',    label: 'Pace',      id: 'l-pace', unit: 'min/km', hi: false },
+  { key: 'dist',    label: 'Distance',  id: 'l-dist', getUnit: () => u_distUnit(),   hi: false },
+  { key: 'elev',    label: 'Elev Gain', id: 'l-elev', getUnit: () => u_elevUnit(),   hi: false },
+  { key: 'spd',     label: 'Speed',     id: 'l-spd',  getUnit: () => u_spdUnit(),    hi: true  },
+  { key: 'maxSpd',  label: 'Max Speed', id: 'l-max',  getUnit: () => u_spdUnit(),    hi: false },
+  { key: 'alt',     label: 'Altitude',  id: 'l-alt',  getUnit: () => u_elevUnit() + ' asl', hi: false },
+  { key: 'avgSpd',  label: 'Avg Speed', id: 'l-avg',  getUnit: () => u_spdUnit(),    hi: false },
+  { key: 'timer',   label: 'Duration',  id: 'l-dur2', getUnit: () => '',             hi: false },
+  { key: 'pace',    label: 'Pace',      id: 'l-pace', getUnit: () => 'min/' + u_distUnit(), hi: false },
 ];
 
 let gridConfig = JSON.parse(localStorage.getItem('mtb_grid') || 'null') ||
@@ -1586,7 +1619,7 @@ function buildLiveGrid() {
     container.innerHTML += `<div class="live-cell${cell.hi ? ' hi' : ''}">
       <div class="live-cell-lbl">${cell.label}${srcTag}</div>
       <div class="live-cell-val" id="${cell.id}"${cell.key === 'avgSpd' ? ' style="font-size:28px"' : ''}>—</div>
-      <div class="live-cell-unit">${cell.unit}</div>
+      <div class="live-cell-unit">${cell.getUnit()}</div>
     </div>`;
   }
 }
@@ -1932,12 +1965,12 @@ function buildSpeedElevChart(path) {
       ${elevLine ? `<polyline points="${elevLine}" fill="none" stroke="#3dcc6e" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
       ${spdLine ? `<polyline points="${spdLine}" fill="none" stroke="#ff6200" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
       <!-- X-axis labels -->
-      <text x="3" y="${H - 2}" font-size="10" fill="var(--dim)" font-family="Barlow Condensed">0 km</text>
-      <text x="${W - 35}" y="${H - 2}" font-size="10" fill="var(--dim)" font-family="Barlow Condensed">${maxDist.toFixed(1)} km</text>
+      <text x="3" y="${H - 2}" font-size="10" fill="var(--dim)" font-family="Barlow Condensed">0 ${u_distUnit()}</text>
+      <text x="${W - 35}" y="${H - 2}" font-size="10" fill="var(--dim)" font-family="Barlow Condensed">${u_distVal(maxDist)} ${u_distUnit()}</text>
     </svg>
     <div class="speed-elev-legend">
-      <div><span style="color:#3dcc6e">■</span> Elevation (m)</div>
-      <div><span style="color:#ff6200">■</span> Speed (km/h)</div>
+      <div><span style="color:#3dcc6e">■</span> Elevation (${u_elevUnit()})</div>
+      <div><span style="color:#ff6200">■</span> Speed (${u_spdUnit()})</div>
     </div>
   </div>`;
 }
@@ -1962,8 +1995,10 @@ function buildElevChart(altPath) {
   const first = pts[0], last = pts[pts.length - 1];
   const fx = parseFloat(first), lx = parseFloat(last);
   const areaPts = polyPts + ` ${lx.toFixed(1)},${H - PAD} ${fx.toFixed(1)},${H - PAD}`;
+  const minElev = u_elevVal(mn);
+  const maxElev = u_elevVal(mx);
   return `<div class="elev-chart">
-    <div class="elev-chart-ttl">Elevation Profile · ${mn}m – ${mx}m asl</div>
+    <div class="elev-chart-ttl">Elevation Profile · ${minElev} – ${maxElev} asl</div>
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:64px;background:var(--bg-surf);border-radius:6px">
       <defs>
         <linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
@@ -2063,20 +2098,21 @@ function openRideDetail(rideId) {
   }
 
   // Stats grid
-  const paceMin = r.dist > 0 ? (r.duration / 60) / r.dist : 0;
+  const distForPace = settings.units === 'imperial' ? r.dist * 0.621371 : r.dist;
+  const paceMin = r.dist > 0 ? (r.duration / 60) / distForPace : 0;
   const pm = Math.floor(paceMin), ps = Math.round((paceMin - pm) * 60);
   const paceStr = r.dist > 0 ? `${pm}:${String(ps).padStart(2,'0')}` : '—';
   const kcal = Math.round((r.duration / 3600) * 500);
 
   html += `<div class="detail-grid">
-    <div class="detail-item"><div class="detail-stat-v">${r.dist}</div><div class="detail-stat-l">km</div></div>
-    <div class="detail-item"><div class="detail-stat-v">${r.elev}m</div><div class="detail-stat-l">Elev</div></div>
+    <div class="detail-item"><div class="detail-stat-v">${u_distVal(r.dist)}</div><div class="detail-stat-l">${u_distUnit()}</div></div>
+    <div class="detail-item"><div class="detail-stat-v">${u_elevVal(r.elev)}</div><div class="detail-stat-l">Elev</div></div>
     <div class="detail-item"><div class="detail-stat-v">${fmtShort(r.duration)}</div><div class="detail-stat-l">Time</div></div>
-    <div class="detail-item"><div class="detail-stat-v">${r.maxSpd}</div><div class="detail-stat-l">Max km/h</div></div>
-    <div class="detail-item"><div class="detail-stat-v">${r.avgSpd}</div><div class="detail-stat-l">Avg km/h</div></div>
+    <div class="detail-item"><div class="detail-stat-v">${u_spdVal(r.maxSpd)}</div><div class="detail-stat-l">Max ${u_spdUnit()}</div></div>
+    <div class="detail-item"><div class="detail-stat-v">${u_spdVal(r.avgSpd)}</div><div class="detail-stat-l">Avg ${u_spdUnit()}</div></div>
     ${r.avgHr ? `<div class="detail-item"><div class="detail-stat-v heart">♥ ${r.avgHr}</div><div class="detail-stat-l">Avg HR</div></div>` : ''}
     ${r.maxHr ? `<div class="detail-item"><div class="detail-stat-v">${r.maxHr}</div><div class="detail-stat-l">Max HR</div></div>` : ''}
-    <div class="detail-item"><div class="detail-stat-v" style="font-size:18px">${paceStr}</div><div class="detail-stat-l">min/km</div></div>
+    <div class="detail-item"><div class="detail-stat-v" style="font-size:18px">${paceStr}</div><div class="detail-stat-l">min/${u_distUnit()}</div></div>
     <div class="detail-item"><div class="detail-stat-v">~${kcal}</div><div class="detail-stat-l">kcal</div></div>
   </div>`;
 
@@ -2092,6 +2128,12 @@ function openRideDetail(rideId) {
   if (r.path && r.path.length >= 4) {
     const chart = buildSpeedElevChart(r.path);
     if (chart) html += `<div class="detail-section">${chart}</div>`;
+  }
+
+  // Segment analysis
+  if (r.path && r.path.length >= 10) {
+    const segments = buildSegmentAnalysis(r.path);
+    if (segments) html += `<div class="detail-section">${segments}</div>`;
   }
 
   // HR zones
@@ -2128,6 +2170,9 @@ function openRideDetail(rideId) {
   // Actions
   html += `<div class="detail-action-row">
     <button class="detail-action-btn" onclick="showDetailShare(${rideId})">📤 Share</button>
+    ${r.path && r.path.length > 1 ? `<button class="detail-action-btn" onclick="showCompareMenu(${rideId})">⚔️ Compare</button>` : ''}
+    ${r.path && r.path.length > 1 ? `<button class="detail-action-btn" onclick="showFriendOverlayInput(${rideId})">👥 Overlay</button>` : ''}
+    ${r.path && r.path.length > 1 ? `<button class="detail-action-btn" onclick="startRideReplay(${rideId})">▶ Replay</button>` : ''}
     <button class="detail-action-btn danger" onclick="delDetailRide(${rideId})">Delete</button>
   </div>`;
 
@@ -2160,7 +2205,7 @@ function showDetailShare(rideId) {
   const r = rides.find(r => r.id === rideId);
   if (!r) return;
   const code = encodeRide(r);
-  const msg = `SHREDMTB Share: ${r.trail} - ${r.dist}km, ${fmtShort(r.duration)}\n\n${code}`;
+  const msg = `SHREDMTB Share: ${r.trail} - ${u_dist(r.dist)}, ${fmtShort(r.duration)}\n\n${code}`;
   if (navigator.share) {
     navigator.share({ title: 'SHREDMTB Ride', text: msg }).catch(() => {});
   } else {
@@ -2208,7 +2253,7 @@ function renderHistory(force) {
           </div>
         </div>
         <div class="ride-nums">
-          <div class="ride-num"><div class="ride-num-v">${r.dist}km</div><div class="ride-num-l">dist</div></div>
+          <div class="ride-num"><div class="ride-num-v">${u_distVal(r.dist)} ${u_distUnit()}</div><div class="ride-num-l">dist</div></div>
           <div class="ride-num"><div class="ride-num-v">${fmtShort(r.duration)}</div><div class="ride-num-l">time</div></div>
         </div>
         <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
@@ -2296,20 +2341,20 @@ function renderStats() {
   wrap.innerHTML = `
     <div class="stats-grid">
       <div class="s-card accent"><div class="s-lbl">Total Rides</div><div class="s-val">${n}</div><div class="s-unit">rides</div></div>
-      <div class="s-card"><div class="s-lbl">Total Distance</div><div class="s-val">${totDist.toFixed(1)}</div><div class="s-unit">km</div></div>
+      <div class="s-card"><div class="s-lbl">Total Distance</div><div class="s-val">${u_distVal(totDist)}</div><div class="s-unit">${u_distUnit()}</div></div>
       <div class="s-card"><div class="s-lbl">Riding Time</div><div class="s-val" style="font-size:27px">${h}h ${m}m</div><div class="s-unit">total</div></div>
-      <div class="s-card"><div class="s-lbl">Elevation Gained</div><div class="s-val" style="font-size:27px">${totElev}</div><div class="s-unit">metres</div></div>
-      <div class="s-card accent"><div class="s-lbl">Top Speed</div><div class="s-val">${topSpd.toFixed(1)}</div><div class="s-unit">km/h</div></div>
-      <div class="s-card"><div class="s-lbl">Avg Speed</div><div class="s-val">${avgSpd}</div><div class="s-unit">km/h</div></div>
+      <div class="s-card"><div class="s-lbl">Elevation Gained</div><div class="s-val" style="font-size:27px">${u_elevVal(totElev)}</div><div class="s-unit">${u_elevUnit()}</div></div>
+      <div class="s-card accent"><div class="s-lbl">Top Speed</div><div class="s-val">${u_spdVal(topSpd)}</div><div class="s-unit">${u_spdUnit()}</div></div>
+      <div class="s-card"><div class="s-lbl">Avg Speed</div><div class="s-val">${u_spdVal(avgSpd)}</div><div class="s-unit">${u_spdUnit()}</div></div>
       ${avgHR ? `<div class="s-card span2"><div class="s-lbl">Avg Heart Rate</div><div class="s-val" style="color:var(--heart);font-size:30px">♥ ${avgHR}</div><div class="s-unit">bpm across ${hrRides.length} Garmin ride${hrRides.length>1?'s':''}</div></div>` : ''}
     </div>
     <div class="chart-section" style="margin-top:8px">
       <div class="chart-ttl">🏅 Personal Records</div>
       <div class="stats-grid" style="margin-bottom:0">
         <div class="s-card accent"><div class="s-lbl">Longest Ride</div><div class="s-val" style="font-size:22px">${fmtShort(longestRide.duration)}</div><div class="s-unit">${esc(longestRide.trail)}</div></div>
-        <div class="s-card"><div class="s-lbl">Top Speed Ever</div><div class="s-val">${fastestRide.maxSpd}</div><div class="s-unit">km/h · ${esc(fastestRide.trail)}</div></div>
-        <div class="s-card"><div class="s-lbl">Most Elevation</div><div class="s-val" style="font-size:22px">${mostElevRide.elev}</div><div class="s-unit">m · ${esc(mostElevRide.trail)}</div></div>
-        <div class="s-card"><div class="s-lbl">Farthest Ride</div><div class="s-val">${longestDist.dist}</div><div class="s-unit">km · ${esc(longestDist.trail)}</div></div>
+        <div class="s-card"><div class="s-lbl">Top Speed Ever</div><div class="s-val">${u_spdVal(fastestRide.maxSpd)}</div><div class="s-unit">${u_spdUnit()} · ${esc(fastestRide.trail)}</div></div>
+        <div class="s-card"><div class="s-lbl">Most Elevation</div><div class="s-val" style="font-size:22px">${u_elevVal(mostElevRide.elev)}</div><div class="s-unit">${u_elevUnit()} · ${esc(mostElevRide.trail)}</div></div>
+        <div class="s-card"><div class="s-lbl">Farthest Ride</div><div class="s-val">${u_distVal(longestDist.dist)}</div><div class="s-unit">${u_distUnit()} · ${esc(longestDist.trail)}</div></div>
       </div>
     </div>
     <div class="chart-section" style="margin-top:8px">
@@ -2377,7 +2422,7 @@ function renderBoard() {
         <div class="board-th">#</div>
         <div class="board-th">Rider</div>
         <div class="board-th">Time</div>
-        <div class="board-th" style="text-align:right">km/h</div>
+        <div class="board-th" style="text-align:right">${u_spdUnit()}</div>
       </div>
       ${entries.map((e,i) => `
         <div class="board-row ${e.isMe?'me':''}">
@@ -2387,7 +2432,7 @@ function renderBoard() {
             <div class="board-rider-date">${fmtDateShort(e.ts)}</div>
           </div>
           <div class="board-time">${fmtShort(e.duration)}</div>
-          <div class="board-speed">${e.avgSpd}</div>
+          <div class="board-speed">${u_spdVal(e.avgSpd)}</div>
         </div>`).join('')}
     </div>
     ${myBest && leader.isMe && entries.length > 1
@@ -2422,6 +2467,308 @@ function clearRivals() {
   if (!lb.rivals.length) return;
   if (!confirm(`Remove all ${lb.rivals.length} rival(s)?`)) return;
   lb.rivals = []; persistLB(); renderBoardView(); toastMsg('Rivals cleared');
+}
+
+// ═══════════════════════════════════════════════════════
+//  TRAIL SEGMENT ANALYSIS
+// ═══════════════════════════════════════════════════════
+function buildSegmentAnalysis(path) {
+  if (!path || path.length < 10) return '';
+
+  // Calculate segments based on gradient
+  const segments = [];
+  let currentSegment = null;
+  let cumDist = 0;
+
+  for (let i = 0; i < path.length; i++) {
+    const p = path[i];
+    const lat = p[0], lng = p[1], alt = p[2], spd = p[3] || 0;
+
+    if (i > 0) {
+      const prevP = path[i - 1];
+      const d = haversine(prevP[0], prevP[1], lat, lng);
+      cumDist += d;
+      const dalt = (alt != null && prevP[2] != null) ? alt - prevP[2] : 0;
+      const grad = d > 0 ? (dalt / (d * 1000)) * 100 : 0;
+
+      let type = 'flat';
+      if (grad > 3) type = 'climb';
+      else if (grad < -3) type = 'descent';
+
+      if (!currentSegment || currentSegment.type !== type) {
+        if (currentSegment && currentSegment.dist > 0.1) {
+          segments.push(currentSegment);
+        }
+        currentSegment = { type, dist: 0, elev: 0, time: 1, speeds: [], grades: [] };
+      }
+      currentSegment.dist += d;
+      currentSegment.elev += dalt;
+      currentSegment.time++;
+      currentSegment.speeds.push(spd);
+      currentSegment.grades.push(grad);
+    }
+  }
+  if (currentSegment && currentSegment.dist > 0.1) segments.push(currentSegment);
+
+  // Merge short segments
+  const merged = [];
+  for (const seg of segments) {
+    if (merged.length > 0 && seg.dist < 0.1 && merged[merged.length - 1]) {
+      const last = merged[merged.length - 1];
+      last.dist += seg.dist;
+      last.elev += seg.elev;
+      last.time += seg.time;
+      last.speeds.push(...seg.speeds);
+      last.grades.push(...seg.grades);
+    } else {
+      merged.push(seg);
+    }
+  }
+
+  if (!merged.length) return '';
+
+  // Build HTML
+  let html = '<div class="segment-analysis"><div class="segment-ttl">Trail Segments</div>';
+  html += '<div class="segment-chart">';
+
+  const totalDist = merged.reduce((a, s) => a + s.dist, 0);
+  for (const seg of merged) {
+    const pct = (seg.dist / totalDist) * 100;
+    const color = seg.type === 'climb' ? '#e84040' : seg.type === 'descent' ? '#3dcc6e' : '#f5a623';
+    html += `<div class="segment-bar" style="width:${pct}%;background:${color};cursor:pointer"
+      onclick="toggleSegmentDetail(event, '${seg.type}', ${seg.dist.toFixed(2)}, ${seg.elev.toFixed(1)}, ${seg.time}, ${(seg.speeds.reduce((a,b)=>a+b,0)/seg.speeds.length).toFixed(1)}, ${seg.grades.filter(g=>g>0).reduce((a,b)=>a+b,0)/(seg.grades.filter(g=>g>0).length||1)})"></div>`;
+  }
+  html += '</div>';
+
+  // Segment rows
+  html += '<div id="segment-details">';
+  for (let i = 0; i < merged.length; i++) {
+    const seg = merged[i];
+    const icon = seg.type === 'climb' ? '🔴' : seg.type === 'descent' ? '🟢' : '🟡';
+    const label = seg.type === 'climb' ? 'Climbing' : seg.type === 'descent' ? 'Descending' : 'Flat';
+    const avgGrade = seg.grades.filter(g => g > 0).reduce((a,b)=>a+b,0) / (seg.grades.filter(g=>g>0).length||1);
+    const avgSpd = seg.speeds.reduce((a,b)=>a+b,0) / seg.speeds.length;
+    const maxSpd = Math.max(...seg.speeds);
+
+    html += `<div class="segment-row" id="seg-row-${i}">
+      <div style="display:flex;align-items:center;gap:8px;flex:1">
+        <div style="font-size:20px">${icon}</div>
+        <div>
+          <div style="font-weight:600">${label}</div>
+          <div style="font-size:12px;color:var(--dim)">${seg.dist.toFixed(2)} ${u_distUnit()} · ${Math.round(seg.time)}s</div>
+        </div>
+      </div>
+      <div style="text-align:right;font-size:13px">
+        ${seg.type === 'climb' ? `<div>${avgGrade.toFixed(1)}%</div>` : ''}
+        ${seg.type === 'descent' ? `<div>${avgGrade.toFixed(1)}%</div>` : ''}
+        <div style="color:var(--orange);font-weight:600">${u_spdVal(avgSpd)}</div>
+      </div>
+    </div>`;
+  }
+  html += '</div></div>';
+
+  return html;
+}
+
+function toggleSegmentDetail(e, type, dist, elev, time, avgSpd, grade) {
+  e.stopPropagation();
+}
+
+// ═══════════════════════════════════════════════════════
+//  RIDE COMPARISON / HEAD-TO-HEAD
+// ═══════════════════════════════════════════════════════
+function showCompareMenu(rideId) {
+  const r = rides.find(x => x.id === rideId);
+  if (!r) return;
+
+  // Get other rides on same trail
+  const trailKey = r.trail.toLowerCase().trim();
+  const matches = rides.filter(x => x.id !== rideId && x.trail.toLowerCase().trim() === trailKey);
+
+  if (!matches.length) {
+    toastMsg('No other rides on this trail', false);
+    return;
+  }
+
+  let html = '<div class="compare-menu"><div style="font-weight:700;margin-bottom:10px">Compare with:</div>';
+  for (const m of matches) {
+    html += `<button class="compare-option" onclick="startComparison(${rideId}, ${m.id})">
+      ${fmtDate(m.ts)} · ${u_distVal(m.dist)} ${u_distUnit()} · ${fmtShort(m.duration)}
+    </button>`;
+  }
+  html += '<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;"><input type="text" class="comment-inp" id="import-code-inp" placeholder="Or paste share code…" style="width:100%;padding:8px;margin-bottom:8px;font-size:14px"></div>';
+  html += '<button class="comment-send" onclick="importAndCompare(' + rideId + ')">Import & Compare</button></div>';
+
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:flex-end;z-index:1000';
+  modal.innerHTML = html;
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+function startComparison(rideId, compRideId) {
+  const r = rides.find(x => x.id === rideId);
+  const comp = rides.find(x => x.id === compRideId);
+  if (!r || !comp) return;
+
+  document.querySelector('.compare-menu').parentElement.remove();
+  showComparisonView(r, comp);
+}
+
+function importAndCompare(rideId) {
+  const code = $('import-code-inp').value.trim();
+  if (!code.startsWith('SHREDMTB:')) { toastMsg('Invalid code', false); return; }
+
+  try {
+    const d = JSON.parse(atob(code.slice(9)));
+    const imported = { riderName: d.rider || 'Friend', trail: d.trail, duration: d.dur, dist: d.dist || 0, avgSpd: d.avgSpd || 0, maxSpd: d.maxSpd || 0, ts: d.ts || Date.now() };
+    document.querySelector('.compare-menu').parentElement.remove();
+    const r = rides.find(x => x.id === rideId);
+    showComparisonView(r, imported, true);
+  } catch(e) { toastMsg('Invalid code', false); }
+}
+
+function showComparisonView(ride, compRide, isImported) {
+  const yourTime = ride.duration, theirTime = compRide.duration;
+  const timeDiff = Math.abs(yourTime - theirTime);
+  const timeWin = yourTime < theirTime ? 'You' : theirTime < yourTime ? 'Them' : 'Tie';
+  const yourSpd = ride.avgSpd, theirSpd = compRide.avgSpd;
+  const spdWin = yourSpd > theirSpd ? 'You' : theirSpd > yourSpd ? 'Them' : 'Tie';
+
+  let html = `<div class="comparison-view">
+    <div class="comparison-header">
+      <div class="comparison-title">Head to Head</div>
+      <div class="comparison-riders">
+        <div class="rider-col">
+          <div class="rider-name">You</div>
+        </div>
+        <div style="text-align:center;color:var(--dim);font-size:12px">vs</div>
+        <div class="rider-col">
+          <div class="rider-name">${esc(compRide.riderName || 'Friend')}</div>
+        </div>
+      </div>
+    </div>
+    <div class="comparison-stats">
+      <div class="comp-stat">
+        <div class="comp-label">Time</div>
+        <div class="comp-your">${fmtShort(yourTime)}</div>
+        <div class="comp-their">${fmtShort(theirTime)}</div>
+        <div class="comp-winner">${timeWin} ${timeWin !== 'Tie' ? (timeWin === 'You' ? '✓' : '✗') : '='}</div>
+      </div>
+      <div class="comp-stat">
+        <div class="comp-label">Avg Speed</div>
+        <div class="comp-your">${u_spdVal(yourSpd)}</div>
+        <div class="comp-their">${u_spdVal(theirSpd)}</div>
+        <div class="comp-winner">${spdWin} ${spdWin !== 'Tie' ? (spdWin === 'You' ? '✓' : '✗') : '='}</div>
+      </div>
+      <div class="comp-stat">
+        <div class="comp-label">Distance</div>
+        <div class="comp-your">${u_distVal(ride.dist)}</div>
+        <div class="comp-their">${u_distVal(compRide.dist)}</div>
+        <div class="comp-winner">—</div>
+      </div>
+      <div class="comp-stat">
+        <div class="comp-label">Max Speed</div>
+        <div class="comp-your">${u_spdVal(ride.maxSpd)}</div>
+        <div class="comp-their">${u_spdVal(compRide.maxSpd)}</div>
+        <div class="comp-winner">${ride.maxSpd > compRide.maxSpd ? 'You ✓' : compRide.maxSpd > ride.maxSpd ? 'Them ✗' : 'Tie ='}</div>
+      </div>
+    </div>
+  </div>`;
+
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px';
+  modal.innerHTML = html;
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+// ═══════════════════════════════════════════════════════
+//  FRIEND'S RIDE OVERLAY
+// ═══════════════════════════════════════════════════════
+function showFriendOverlayInput(rideId) {
+  const code = prompt('Paste friend\'s share code:');
+  if (!code || !code.trim().startsWith('SHREDMTB:')) { toastMsg('Invalid code', false); return; }
+
+  try {
+    const d = JSON.parse(atob(code.trim().slice(9)));
+    const friendPath = d.path || [];
+    if (!friendPath.length) { toastMsg('No path data in code', false); return; }
+
+    const mapId = 'cmap-' + rideId;
+    const mapEl = $(mapId);
+    if (!mapEl || !cardMaps[rideId]) { toastMsg('Map not ready', false); return; }
+
+    const map = cardMaps[rideId];
+
+    // Remove old friend layer if exists
+    if (window._friendLayer) {
+      map.removeLayer(window._friendLayer);
+    }
+
+    // Draw friend path
+    const friendLatLngs = friendPath.map(p => [p[0], p[1]]);
+    if (friendLatLngs.length > 1) {
+      window._friendLayer = L.polyline(friendLatLngs, { color: '#4d9de0', weight: 3, opacity: 0.7 }).addTo(map);
+    }
+
+    toastMsg('✓ Friend\'s ride overlaid');
+  } catch(e) { toastMsg('Invalid code', false); }
+}
+
+// ═══════════════════════════════════════════════════════
+//  RIDE REPLAY
+// ═══════════════════════════════════════════════════════
+function startRideReplay(rideId) {
+  const r = rides.find(x => x.id === rideId);
+  if (!r || !r.path || r.path.length < 2) { toastMsg('No path data', false); return; }
+
+  const mapId = 'cmap-' + rideId;
+  const map = cardMaps[rideId];
+  if (!map) { toastMsg('Map not ready', false); return; }
+
+  let idx = 0;
+  let speed = 1;
+  let isPlaying = true;
+
+  if (!window._replayMarker) {
+    window._replayMarker = L.circleMarker([r.path[0][0], r.path[0][1]], { radius: 8, color: '#ff6200', weight: 2, opacity: 1, fillOpacity: 0.7 }).addTo(map);
+  }
+
+  function animate() {
+    if (!isPlaying || idx >= r.path.length) {
+      if (idx >= r.path.length) { idx = 0; isPlaying = false; }
+      return;
+    }
+
+    const p = r.path[idx];
+    const spd = p[3] || 0;
+    const color = speedColor(spd);
+
+    window._replayMarker.setLatLng([p[0], p[1]]).setStyle({ color });
+    map.panTo([p[0], p[1]]);
+
+    idx++;
+    const delay = Math.max(50, 30000 / r.path.length / speed);
+    setTimeout(animate, delay);
+  }
+
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:var(--bg-card);padding:12px 16px;border-radius:8px;z-index:1000;min-width:200px;text-align:center;border:1px solid var(--border)';
+  modal.innerHTML = `
+    <div style="margin-bottom:10px;font-weight:700">Replay (${(idx / r.path.length * 100).toFixed(0)}%)</div>
+    <div style="display:flex;gap:8px;margin-bottom:10px;justify-content:center">
+      <button class="comment-send" style="padding:6px 12px;font-size:12px" onclick="window._replaySpeed=0.5">${window._replaySpeed===0.5?'✓':''}0.5x</button>
+      <button class="comment-send" style="padding:6px 12px;font-size:12px" onclick="window._replaySpeed=1">${window._replaySpeed===1?'✓':''}1x</button>
+      <button class="comment-send" style="padding:6px 12px;font-size:12px" onclick="window._replaySpeed=2">${window._replaySpeed===2?'✓':''}2x</button>
+      <button class="comment-send" style="padding:6px 12px;font-size:12px" onclick="window._replaySpeed=5">${window._replaySpeed===5?'✓':''}5x</button>
+    </div>
+    <button class="comment-send" style="width:100%" onclick="this.parentElement.parentElement.remove()">Stop</button>
+  `;
+  document.body.appendChild(modal);
+
+  window._replaySpeed = 1;
+  animate();
 }
 
 // ═══════════════════════════════════════════════════════
